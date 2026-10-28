@@ -1,0 +1,66 @@
+name: Compiler l'APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tests du noyau (NMEA, mesure, CSV)
+        run: node tests/core.test.js
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Clé de signature (si les secrets sont configurés)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/collecte.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/collecte.jks" >> "$GITHUB_ENV"
+            echo "Signature avec la clé Arpent-Nord."
+          else
+            echo "::warning::Aucune clé configurée : APK signé avec une clé temporaire. Chaque nouvelle version exigera de désinstaller l'ancienne (les points sur l'appareil seraient perdus)."
+          fi
+
+      - name: Compilation
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle --no-daemon assembleRelease
+
+      - name: Renommer l'APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/*.apk "out/Collecte-GNSS-0.1.${GITHUB_RUN_NUMBER}.apk"
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Collecte-GNSS-apk
+          path: out/*.apk
+
+      - name: Publier dans « Releases » (téléchargement direct)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          name: Collecte GNSS 0.1.${{ github.run_number }}
+          body: Prototype — étape 0. Installer l'APK sur l'appareil Android (voir README).
+          prerelease: true
+          files: out/*.apk
