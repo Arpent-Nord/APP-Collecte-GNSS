@@ -1,0 +1,49 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Numéro de version : 0.1.<numéro de compilation GitHub>
+def buildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as Integer
+
+android {
+    namespace 'com.arpentnord.collecte'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.arpentnord.collecte'
+        minSdk 26
+        targetSdk 34
+        versionCode buildNumber
+        versionName "0.1.${buildNumber}"
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    // Signature stable : nécessaire pour mettre l'application à jour sans la désinstaller
+    // (et sans perdre les points enregistrés sur l'appareil). Voir README.
+    signingConfigs {
+        release {
+            def ks = System.getenv('KEYSTORE_FILE')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig System.getenv('KEYSTORE_FILE') ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
