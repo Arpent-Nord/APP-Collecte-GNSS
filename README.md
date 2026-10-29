@@ -69,8 +69,8 @@ Onglet **Travail** :
 - **Coordonnées planes** : NAD83(SCRS) / MTM 6, 7, 8 (EPSG 2948, 2949, 2950). La projection est vérifiée contre PROJ (écart < 1 mm) et contre Emlid Flow (point d'essai identique au millimètre).
 - NAD83 / MTM 6, 7, 8 (EPSG 32186, 32187, 32188) : conversion NAD83(SCRS) → NAD83 (1986) par la grille NTv2 officielle **NA83SCRS** du MRN (14 sous-grilles, `www/grids/na83scrs.js`). Aller et retour identiques à PROJ à moins de 1 mm.
 - **Altitudes CGVD28 (HTv2.0, EPSG 10588)** :
-  - **modèle HT2_2002v70** (par défaut, comme Emlid Flow) : `www/grids/ht2_2002v70.js`. Au point d'essai, altitude identique à Flow (200,788).
-  - modèle HT2_2010v70 (NAD83(SCRS) époque 2010) : `www/grids/ht2_2010v70.js`.
+  - **modèle HT2_2010v70** (par défaut, standard Arpent-Nord, comme « CGVD28 height » dans Emlid Flow) : `www/grids/ht2_2010v70.js`.
+  - modèle HT2_2002v70 (NAD83(SCRS)v4, époque 2002) : `www/grids/ht2_2002v70.js`. Au point d'essai, altitude identique à l'export Flow fait en 2002v70 (200,788).
   - Grilles de Ressources naturelles Canada (PROJ-data), extrait Québec 44,8–63° N, 57–80° O, identiques à PROJ à moins de 1 mm.
   - **séparation fixe du chantier** (N, en m) : altitude = hauteur ellipsoïdale − N.
 - Projection MTM vérifiée aussi sur les exemples officiels du *Guide des référentiels géodésique et altimétrique au Québec* (MRNF, 2010).

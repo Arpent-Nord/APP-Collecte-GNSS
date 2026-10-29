@@ -251,4 +251,18 @@ test('NAD83 / MTM 7 (EPSG 32187) au point d\u2019essai : identique à PROJ < 1 m
   assert.ok(Math.abs(r.e - ref.e) < 0.001 && Math.abs(r.n - ref.n) < 0.001, JSON.stringify([r.e, r.n, ref]));
 });
 
+test('table des sources NTRIP : décodage STR et tri (réseau, constellations, distance)', () => {
+  const Ntrip = require(path.join(www, 'ntrip.js'));
+  const lines = [
+    'STR;RTCM3_ViRS;ViRS;RTCM 3.1;1004(1),1012(1);2;GPS+GLO;SmartNet;CAN;46.67;-72.03;1;0;sNTRIP;none;B;N;5000;',
+    'STR;MSM_iMAX;iMAX;RTCM 3.2;1077(1),1087(1),1097(1),1127(1);2;GPS+GLO+GAL+BDS;SmartNet;CAN;0.00;0.00;1;1;sNTRIP;none;B;N;5000;',
+    'STR;QCSTN;Station;RTCM 3.2;1077(1);2;GPS;SmartNet;CAN;46.95;-71.90;0;0;sNTRIP;none;B;N;5000;'
+  ];
+  const l = Ntrip.mountList(lines.map((x) => ({ name: x.split(';')[1], info: x })), { lat: 46.9338, lon: -71.8813 });
+  assert.deepStrictEqual(l.map((m) => m.name), ['MSM_iMAX', 'RTCM3_ViRS', 'QCSTN']);
+  assert.ok(l[0].network && l[0].galileo && l[0].beidou && l[0].msm && /réseau/.test(l[0].label));
+  assert.ok(Math.abs(l[1].distKm - 31.7) < 1, 'distance ' + l[1].distKm);
+  assert.ok(/base à 3\d km/.test(l[1].label), l[1].label);
+});
+
 console.log(`\n${passed} tests réussis`);

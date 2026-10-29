@@ -213,8 +213,10 @@ details summary { cursor: pointer; font-weight: 600; }
         <label>Utilisateur<input id="nUser" autocomplete="off"></label>
         <label>Mot de passe<input id="nPass" type="password" autocomplete="off"></label>
         <label class="full">Point de montage
-          <input id="nMount" list="mountList" autocomplete="off">
-          <datalist id="mountList"></datalist>
+          <input id="nMount" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </label>
+        <label class="full" id="mountSelWrap" style="display:none">Points de montage offerts par le serveur
+          <select id="nMountSel"></select>
         </label>
         <label class="full check"><input type="checkbox" id="nGga" checked>Envoyer ma position au serveur (requis pour VRS / réseau)</label>
       </div>
@@ -298,6 +300,7 @@ details summary { cursor: pointer; font-weight: 600; }
 <script src="js/drivers.js"></script>
 <script src="js/survey.js"></script>
 <script src="js/proj.js"></script>
+<script src="js/ntrip.js"></script>
 <script src="grids/ht2_2010v70.js"></script>
 <script src="grids/ht2_2002v70.js"></script>
 <script src="grids/na83scrs.js"></script>

@@ -291,8 +291,8 @@
     $('jSepHint').style.display = sepMode ? '' : 'none';
     var msgs = [];
     if (sepMode && isNaN(numVal('jSep', NaN))) msgs.push('Inscrire la séparation N du chantier pour obtenir les altitudes.');
-    if (vt.id === '10588-2010') msgs.push('Modèle HT2_2010v70 (NAD83(SCRS) époque 2010). Emlid Flow utilise HT2_2002v70 : écart de 2,3 cm au point d\u2019essai.');
-    if (vt.id === '10588-2002') msgs.push('Modèle HT2_2002v70 (NAD83(SCRS)v4, époque 2002), le même qu\u2019Emlid Flow.');
+    if (vt.id === '10588-2010') msgs.push('Modèle HT2_2010v70 (NAD83(SCRS) époque 2010) : standard Arpent-Nord, comme « CGVD28 height » dans Emlid Flow.');
+    if (vt.id === '10588-2002') msgs.push('Modèle HT2_2002v70 (NAD83(SCRS)v4, époque 2002) : environ 2 cm d\u2019écart avec HT2_2010v70 dans la région de Québec.');
     if (!Proj.hasGrid('NA83SCRS')) msgs.push('Systèmes NAD83 (32186-32188) : grille de conversion NAD83 ↔ NAD83(SCRS) à installer.');
     if (hz.datum === 'NAD83') msgs.push('NAD83 (1986) : conversion par la grille NTv2 NA83SCRS du MRN (Québec).');
     if (state.lastWarn && /zone/.test(state.lastWarn)) msgs.unshift(state.lastWarn + '.');
@@ -362,10 +362,20 @@
           if (ev.state === 'stopped') { state.ntripOn = false; $('btnNtrip').disabled = false; $('btnNtripStop').disabled = true; }
           break;
         case 'sourcetable':
-          if (ev.error) { setNtripMsg('Liste impossible : ' + ev.error, 'bad'); break; }
-          var dl = $('mountList'); dl.innerHTML = '';
-          (ev.mounts || []).forEach(function (m) { var o = document.createElement('option'); o.value = m.name; o.label = m.info || ''; dl.appendChild(o); });
-          setNtripMsg((ev.mounts || []).length + ' point(s) de montage trouvé(s). Choisir dans le champ.', 'ok');
+          if (ev.error) { setNtripMsg('Liste impossible : ' + ev.error + ' (vérifier le serveur, le port et la connexion Internet).', 'bad'); break; }
+          var pos = state.gga && state.gga.lat !== null ? { lat: state.gga.lat, lon: state.gga.lon } : null;
+          var list = Ntrip.mountList(ev.mounts || [], pos), sel = $('nMountSel');
+          sel.innerHTML = '';
+          if (!list.length) {
+            $('mountSelWrap').style.display = 'none';
+            setNtripMsg('Le serveur n\u2019a renvoyé aucun point de montage. Vérifier le serveur, le port et les identifiants, ou inscrire le nom à la main.', 'warn');
+            break;
+          }
+          addOpt(sel, '', '— Choisir (' + list.length + ') —');
+          list.forEach(function (m) { addOpt(sel, m.name, m.label); });
+          if (list.some(function (m) { return m.name === $('nMount').value; })) sel.value = $('nMount').value;
+          $('mountSelWrap').style.display = '';
+          setNtripMsg(list.length + ' point(s) de montage reçu(s). Les réseaux (VRS) et les flux multi-constellations sont en tête de liste.', 'ok');
           break;
         case 'file':
           var pm = $('ptMsg'); pm.style.display = 'block';
@@ -397,6 +407,7 @@
   $('btnNtrip').addEventListener('click', ntripStart);
   $('btnNtripStop').addEventListener('click', ntripStop);
   $('btnSource').addEventListener('click', sourcetable);
+  $('nMountSel').addEventListener('change', function () { if (this.value) { $('nMount').value = this.value; persistFields(); } });
   $('btnMeasure').addEventListener('click', startMeasure);
   $('btnCancel').addEventListener('click', cancelMeasure);
   $('btnToday').addEventListener('click', today);
@@ -424,7 +435,7 @@
   fillDrivers();
   fillSystems();
   if (!settings.jHz) settings.jHz = '2949';
-  if (!settings.jVt || settings.jVt === '10588-grille') settings.jVt = '10588-2002';
+  if (!settings.jVt || settings.jVt === '10588-grille') settings.jVt = '10588-2010';
   restoreFields();
   if (!currentDriver() || !Drivers.byId($('selDriver').value)) $('selDriver').selectedIndex = 0;
   applyTheme();

@@ -240,8 +240,7 @@ public class NtripClient {
                 if (l.startsWith("STR;")) {
                     String[] f = l.split(";", -1);
                     if (f.length > 1) {
-                        String info = (f.length > 3 ? f[3] : "") + (f.length > 2 && !f[2].isEmpty() ? " — " + f[2] : "");
-                        mounts.add(new Mount(f[1], info));
+                        mounts.add(new Mount(f[1], l)); // ligne STR complète, décodée côté interface
                     }
                 }
             }
