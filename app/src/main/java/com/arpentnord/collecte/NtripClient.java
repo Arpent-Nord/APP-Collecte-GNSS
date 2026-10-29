@@ -81,9 +81,18 @@ public class NtripClient {
         });
     }
 
+    /** Version du protocole qui a fonctionné (1 ou 2) ; on essaie v1 puis v2 en cas de refus. */
+    private int ntripVersion = 1;
+
     private void loop(String host, int port, String mount, String user, String pass) {
+        ntripVersion = 1;
         while (alive()) {
             String fatal = session(host, port, mount, user, pass);
+            if (fatal != null && fatal.startsWith("RETRY_V2") && ntripVersion == 1) {
+                ntripVersion = 2; // certains points de montage n'acceptent que NTRIP 2.0
+                continue;
+            }
+            if (fatal != null && fatal.startsWith("RETRY_V2")) fatal = fatal.substring(8);
             if (!alive()) return;
             if (fatal != null) {
                 synchronized (this) {
@@ -111,7 +120,7 @@ public class NtripClient {
             s.setSoTimeout(30000);
             socket = s;
             OutputStream o = s.getOutputStream();
-            o.write(request("/" + mount, host, user, pass).getBytes(StandardCharsets.US_ASCII));
+            o.write(request("/" + mount, host, port, user, pass, ntripVersion).getBytes(StandardCharsets.US_ASCII));
             if (lastGga != null) o.write((lastGga + "\r\n").getBytes(StandardCharsets.US_ASCII));
             o.flush();
 
@@ -119,15 +128,18 @@ public class NtripClient {
             List<String> head = readHeader(in);
             String status = head.isEmpty() ? "" : head.get(0);
             if (status.startsWith("SOURCETABLE")) return "Point de montage « " + mount + " » introuvable";
-            if (status.contains("401")) return "Identifiants refusés par le serveur";
+            if (status.contains("401") || status.contains("403")) {
+                return "RETRY_V2" + "Refus du serveur (NTRIP " + ntripVersion + ".0, « " + status.trim() + " ») : vérifier l'utilisateur, le mot de passe, "
+                        + "l'abonnement à « " + mount + " », ou une autre connexion déjà ouverte avec ce compte";
+            }
             if (!(status.startsWith("ICY 200") || status.matches("HTTP/1\\.[01] 200.*"))) {
-                return "Réponse inattendue : " + status;
+                return "Réponse inattendue du serveur : « " + status.trim() + " »";
             }
             boolean chunked = false;
             for (String h : head) {
                 if (h.toLowerCase().startsWith("transfer-encoding:") && h.toLowerCase().contains("chunked")) chunked = true;
             }
-            listener.onState("connected", "Corrections reçues de " + mount, bytes);
+            listener.onState("connected", "Corrections reçues de " + mount + " (NTRIP " + ntripVersion + ".0)", bytes);
             if (chunked) readChunked(in); else readRaw(in);
             return null;
         } catch (IOException e) {
@@ -179,10 +191,16 @@ public class NtripClient {
         }
     }
 
-    private static String request(String path, String host, String user, String pass) {
+    private static String request(String path, String host, int port, String user, String pass, int version) {
         StringBuilder r = new StringBuilder();
-        r.append("GET ").append(path).append(" HTTP/1.0\r\n");
-        r.append("Host: ").append(host).append("\r\n");
+        if (version == 2) {
+            r.append("GET ").append(path).append(" HTTP/1.1\r\n");
+            r.append("Host: ").append(host).append(":").append(port).append("\r\n");
+            r.append("Ntrip-Version: Ntrip/2.0\r\n");
+        } else {
+            r.append("GET ").append(path).append(" HTTP/1.0\r\n");
+            r.append("Host: ").append(host).append("\r\n");
+        }
         r.append("User-Agent: ").append(AGENT).append("\r\n");
         r.append("Accept: */*\r\n");
         if (user != null && !user.isEmpty()) {
@@ -230,7 +248,7 @@ public class NtripClient {
             s.connect(new InetSocketAddress(host, port), 10000);
             s.setSoTimeout(15000);
             OutputStream o = s.getOutputStream();
-            o.write(request("/", host, user, pass).getBytes(StandardCharsets.US_ASCII));
+            o.write(request("/", host, port, user, pass, 1).getBytes(StandardCharsets.US_ASCII));
             o.flush();
             InputStream in = s.getInputStream();
             String l;

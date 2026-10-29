@@ -178,7 +178,7 @@
     state.ntripOn = true; state.lastGgaToCaster = 0;
     $('btnNtrip').disabled = true; $('btnNtripStop').disabled = false;
     Native.ntripStart($('nHost').value.trim(), parseInt($('nPort').value, 10) || 2101, $('nMount').value.trim(),
-      $('nUser').value, $('nPass').value);
+      $('nUser').value.trim(), $('nPass').value);
     if (state.gga && $('nGga').checked) { Native.ntripGga(state.gga.raw); state.lastGgaToCaster = Date.now(); }
   }
   function ntripStop() {

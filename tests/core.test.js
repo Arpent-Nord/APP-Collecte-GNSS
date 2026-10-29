@@ -261,8 +261,8 @@ test('table des sources NTRIP : décodage STR et tri (réseau, constellations, d
   const l = Ntrip.mountList(lines.map((x) => ({ name: x.split(';')[1], info: x })), { lat: 46.9338, lon: -71.8813 });
   assert.deepStrictEqual(l.map((m) => m.name), ['MSM_iMAX', 'RTCM3_ViRS', 'QCSTN']);
   assert.ok(l[0].network && l[0].galileo && l[0].beidou && l[0].msm && /réseau/.test(l[0].label));
-  assert.ok(Math.abs(l[1].distKm - 31.7) < 1, 'distance ' + l[1].distKm);
-  assert.ok(/base à 3\d km/.test(l[1].label), l[1].label);
+  assert.ok(l[1].network && l[1].distKm === null && /position requise/.test(l[1].label), l[1].label);
+  assert.ok(Math.abs(l[2].distKm - 2.1) < 0.5 && /base à 2 km/.test(l[2].label), l[2].label);
 });
 
 console.log(`\n${passed} tests réussis`);

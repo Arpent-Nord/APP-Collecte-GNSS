@@ -14,7 +14,9 @@
     return {
       name: f[1], id: f[2] || '', format: f[3] || '', details: f[4] || '', nav: f[6] || '',
       lat: num(f[9]), lon: num(f[10]),
-      nmea: f[11] === '1', network: f[12] === '1',
+      nmea: f[11] === '1',
+      // Réseau : solution déclarée « 1 », ou position requise (VRS, iMAX…). Leur position dans la table est nominale.
+      network: f[12] === '1' || f[11] === '1',
       galileo: /GAL/.test(nav), beidou: /BDS|BEI|CMP/.test(nav), glonass: /GLO/.test(nav),
       msm: /MSM/i.test(f[3] + ' ' + f[4] + ' ' + f[1]) || /10(7[4-7]|8[4-7]|9[4-7]|1[1-2][4-7])/.test(f[4] || '')
     };
@@ -38,7 +40,7 @@
         ? distanceKm(pos.lat, pos.lon, m.lat, m.lon) : null;
       var n = 0; if (m.glonass) n++; if (m.galileo) n++; if (m.beidou) n++;
       m.score = (m.network ? 1000 : 0) + n * 100 + (m.distKm !== null ? Math.max(0, 99 - m.distKm) : 0);
-      m.label = m.name + ' — ' + [m.format, m.nav, m.network ? 'réseau (VRS)' : (m.distKm !== null ? 'base à ' + m.distKm.toFixed(0) + ' km' : 'base unique')]
+      m.label = m.name + ' — ' + [m.format, m.nav, m.network ? 'réseau (position requise)' : (m.distKm !== null ? 'base à ' + m.distKm.toFixed(0) + ' km' : 'base unique')]
         .filter(function (x) { return x; }).join(' · ');
       out.push(m);
     });
