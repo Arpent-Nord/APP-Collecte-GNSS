@@ -218,6 +218,12 @@ details summary { cursor: pointer; font-weight: 600; }
         <label class="full" id="mountSelWrap" style="display:none">Points de montage offerts par le serveur
           <select id="nMountSel"></select>
         </label>
+        <details class="full"><summary>Options avancées</summary>
+          <label style="margin-top:8px">Identification du client (User-Agent)
+            <input id="nAgent" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="NTRIP ArpentNordCollecte (par défaut)">
+          </label>
+          <p class="hint">À modifier seulement si un serveur refuse l'application alors qu'il accepte un autre logiciel. Doit commencer par « NTRIP ».</p>
+        </details>
         <label class="full check"><input type="checkbox" id="nGga" checked>Envoyer ma position au serveur (requis pour VRS / réseau)</label>
       </div>
       <div class="row">

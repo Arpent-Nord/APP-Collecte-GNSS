@@ -33,6 +33,12 @@ public class NtripClient {
     }
 
     private static final String AGENT = "NTRIP ArpentNordCollecte/" + BuildConfig.VERSION_NAME;
+    /** Identification envoyée au serveur ; modifiable (options avancées) pour les serveurs exigeants. */
+    private static volatile String agent = AGENT;
+
+    public static void setAgent(String a) {
+        agent = (a == null || a.trim().isEmpty()) ? AGENT : a.trim();
+    }
     private static final int RETRY_MS = 5000;
 
     private final Listener listener;
@@ -121,7 +127,6 @@ public class NtripClient {
             socket = s;
             OutputStream o = s.getOutputStream();
             o.write(request("/" + mount, host, port, user, pass, ntripVersion).getBytes(StandardCharsets.US_ASCII));
-            if (lastGga != null) o.write((lastGga + "\r\n").getBytes(StandardCharsets.US_ASCII));
             o.flush();
 
             InputStream in = s.getInputStream();
@@ -129,8 +134,8 @@ public class NtripClient {
             String status = head.isEmpty() ? "" : head.get(0);
             if (status.startsWith("SOURCETABLE")) return "Point de montage « " + mount + " » introuvable";
             if (status.contains("401") || status.contains("403")) {
-                return "RETRY_V2" + "Refus du serveur (NTRIP " + ntripVersion + ".0, « " + status.trim() + " ») : vérifier l'utilisateur, le mot de passe, "
-                        + "l'abonnement à « " + mount + " », ou une autre connexion déjà ouverte avec ce compte";
+                return "RETRY_V2" + "Refus du serveur (NTRIP " + ntripVersion + ".0, « " + status.trim() + " »)" + details(head, in)
+                        + ". Vérifier l'utilisateur, le mot de passe, l'abonnement à « " + mount + " », ou une autre connexion déjà ouverte avec ce compte";
             }
             if (!(status.startsWith("ICY 200") || status.matches("HTTP/1\\.[01] 200.*"))) {
                 return "Réponse inattendue du serveur : « " + status.trim() + " »";
@@ -138,6 +143,11 @@ public class NtripClient {
             boolean chunked = false;
             for (String h : head) {
                 if (h.toLowerCase().startsWith("transfer-encoding:") && h.toLowerCase().contains("chunked")) chunked = true;
+            }
+            // Position envoyée seulement après l'acceptation (réseaux VRS / iMAX).
+            if (lastGga != null) {
+                o.write((lastGga + "\r\n").getBytes(StandardCharsets.US_ASCII));
+                o.flush();
             }
             listener.onState("connected", "Corrections reçues de " + mount + " (NTRIP " + ntripVersion + ".0)", bytes);
             if (chunked) readChunked(in); else readRaw(in);
@@ -201,7 +211,7 @@ public class NtripClient {
             r.append("GET ").append(path).append(" HTTP/1.0\r\n");
             r.append("Host: ").append(host).append("\r\n");
         }
-        r.append("User-Agent: ").append(AGENT).append("\r\n");
+        r.append("User-Agent: ").append(agent).append("\r\n");
         r.append("Accept: */*\r\n");
         if (user != null && !user.isEmpty()) {
             String token = Base64.encodeToString((user + ":" + (pass == null ? "" : pass)).getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
@@ -209,6 +219,25 @@ public class NtripClient {
         }
         r.append("Connection: close\r\n\r\n");
         return r.toString();
+    }
+
+    /** Détails utiles d'un refus : en-têtes Server / WWW-Authenticate et début du texte renvoyé. */
+    private static String details(List<String> head, InputStream in) {
+        StringBuilder d = new StringBuilder();
+        for (String h : head) {
+            String l = h.toLowerCase();
+            if (l.startsWith("server:") || l.startsWith("www-authenticate:")) d.append(" · ").append(h.trim());
+        }
+        try {
+            byte[] b = new byte[400];
+            int n = in.read(b);
+            if (n > 0) {
+                String body = new String(b, 0, n, StandardCharsets.ISO_8859_1).replaceAll("<[^>]*>", " ").replaceAll("\\s+", " ").trim();
+                if (!body.isEmpty()) d.append(" · ").append(body.length() > 160 ? body.substring(0, 160) : body);
+            }
+        } catch (IOException ignored) {
+        }
+        return d.toString();
     }
 
     private static List<String> readHeader(InputStream in) throws IOException {

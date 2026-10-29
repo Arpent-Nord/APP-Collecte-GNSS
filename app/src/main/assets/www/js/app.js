@@ -15,7 +15,7 @@
   var settings = load(STORE_SETTINGS, {});
   var points = load(STORE_POINTS, []);
 
-  var FIELDS = ['selDriver', 'nHost', 'nPort', 'nUser', 'nPass', 'nMount', 'nGga',
+  var FIELDS = ['selDriver', 'nHost', 'nPort', 'nUser', 'nPass', 'nMount', 'nGga', 'nAgent',
     'mLeve', 'mNom', 'mCode', 'mPole', 'cDur', 'cMin', 'cSH', 'cSV', 'cFix', 'jHz', 'jVt', 'jSep'];
   var LEVE_TEMPLATE = 'AAMMJJSECT#NATSS';
   function restoreFields() {
@@ -177,6 +177,7 @@
     if (!$('nHost').value || !$('nMount').value) { setNtripMsg('Serveur et point de montage requis.', 'warn'); return; }
     state.ntripOn = true; state.lastGgaToCaster = 0;
     $('btnNtrip').disabled = true; $('btnNtripStop').disabled = false;
+    if (Native.ntripSetAgent) Native.ntripSetAgent($('nAgent').value.trim());
     Native.ntripStart($('nHost').value.trim(), parseInt($('nPort').value, 10) || 2101, $('nMount').value.trim(),
       $('nUser').value.trim(), $('nPass').value);
     if (state.gga && $('nGga').checked) { Native.ntripGga(state.gga.raw); state.lastGgaToCaster = Date.now(); }

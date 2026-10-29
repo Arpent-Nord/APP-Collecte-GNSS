@@ -89,6 +89,11 @@ public class GnssBridge implements BluetoothLink.Listener, NtripClient.Listener 
     }
 
     @JavascriptInterface
+    public void ntripSetAgent(String agent) {
+        NtripClient.setAgent(agent);
+    }
+
+    @JavascriptInterface
     public void ntripStop() {
         ntrip.stop();
     }
