@@ -48,7 +48,15 @@
     return out;
   }
 
-  var api = { parseStr: parseStr, mountList: mountList, distanceKm: distanceKm };
+  /* Ligne de base (km, distance 3D) entre le récepteur (lat, lon, h ellipsoïdale) et la base (ECEF, m). GRS80. */
+  function baselineKm(lat, lon, h, x, y, z) {
+    var A = 6378137.0, f = 1 / 298.257222101, e2 = f * (2 - f), r = Math.PI / 180;
+    var sl = Math.sin(lat * r), cl = Math.cos(lat * r), N = A / Math.sqrt(1 - e2 * sl * sl);
+    var X = (N + h) * cl * Math.cos(lon * r), Y = (N + h) * cl * Math.sin(lon * r), Z = (N * (1 - e2) + h) * sl;
+    return Math.sqrt((X - x) * (X - x) + (Y - y) * (Y - y) + (Z - z) * (Z - z)) / 1000;
+  }
+
+  var api = { parseStr: parseStr, mountList: mountList, distanceKm: distanceKm, baselineKm: baselineKm };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.Ntrip = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -155,7 +155,7 @@
     ['est', 'Est'], ['nord', 'Nord'], ['alt', 'Altitude'], ['systeme', 'Systeme_plan'], ['systemeAlti', 'Systeme_alti'],
     ['lat', 'Latitude'], ['lon', 'Longitude'], ['hEll', 'H_ellipsoidale'], ['sep', 'Separation_geoide'],
     ['sigmaH', 'Precision_H'], ['sigmaV', 'Precision_V'], ['n', 'Epoques'], ['rejected', 'Epoques_rejetees'],
-    ['qualityLabel', 'Solution'], ['pole', 'Hauteur_canne'], ['apc', 'Decalage_recepteur'],
+    ['qualityLabel', 'Solution'], ['baseKm', 'Ligne_base_km'], ['baseId', 'Station_base'], ['pole', 'Hauteur_canne'], ['apc', 'Decalage_recepteur'],
     ['recepteur', 'Recepteur'], ['start', 'Debut_UTC'], ['end', 'Fin_UTC'], ['note', 'Note']
   ];
 
@@ -163,6 +163,8 @@
     if (v === null || v === undefined) return '';
     if (key === 'lat' || key === 'lon') return v.toFixed(9);
     if (key === 'est' || key === 'nord' || key === 'alt' || key === 'sep') return v.toFixed(3);
+    if (key === 'baseKm') return v.toFixed(2);
+    if (key === 'baseId') return String(v);
     if (typeof v === 'number') return (key === 'n' || key === 'rejected') ? String(v) : v.toFixed(4);
     var s = String(v);
     if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';

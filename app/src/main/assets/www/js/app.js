@@ -16,7 +16,7 @@
   var points = load(STORE_POINTS, []);
 
   var FIELDS = ['selDriver', 'nHost', 'nPort', 'nUser', 'nPass', 'nMount', 'nGga', 'nAgent',
-    'mLeve', 'mNom', 'mCode', 'mPole', 'cDur', 'cMin', 'cSH', 'cSV', 'cFix', 'jHz', 'jVt', 'jSep'];
+    'mLeve', 'mNom', 'mCode', 'mPole', 'cDur', 'cMin', 'cSH', 'cSV', 'cFix', 'jHz', 'jVt', 'jSep', 'jBaseMax'];
   var LEVE_TEMPLATE = 'AAMMJJSECT#NATSS';
   function restoreFields() {
     FIELDS.forEach(function (id) {
@@ -87,6 +87,10 @@
     $('dRef').textContent = fresh && g.refStation ? g.refStation : '—';
     $('dRate').textContent = state.connected ? String(state.rate) : '—';
     $('dBad').textContent = state.decoder ? state.decoder.stats.bad : 0;
+    var bk = fresh ? baseKm() : null, far = bk !== null && bk > numVal('jBaseMax', 10);
+    $('sbBase').textContent = bk === null ? '—' : bk.toFixed(1) + ' km';
+    $('dBase').textContent = bk === null ? '—' : bk.toFixed(1) + ' km' + (state.base ? ' (station ' + state.base.id + ')' : '');
+    $('sbBaseKv').classList.toggle('far', far); $('dBaseKv').classList.toggle('far', far);
     var c = fresh && g.hEll !== null ? Proj.convert(g.lat, g.lon, g.hEll - numVal('mPole', 0) - numVal('mApc', 0), job()) : null;
     $('dE').textContent = c && c.e !== null ? c.e.toFixed(3) : '—';
     $('dN').textContent = c && c.n !== null ? c.n.toFixed(3) : '—';
@@ -168,6 +172,74 @@
     if (Native) Native.disconnect();
   }
 
+  // ---------- Profils NTRIP (plusieurs fournisseurs : SmartNet, CAN-NET…) ----------
+  var PROF_FIELDS = { host: 'nHost', port: 'nPort', user: 'nUser', pass: 'nPass', mount: 'nMount', gga: 'nGga', agent: 'nAgent' };
+  function profFromFields(name) {
+    var p = { name: name };
+    Object.keys(PROF_FIELDS).forEach(function (k) { var el = $(PROF_FIELDS[k]); p[k] = el.type === 'checkbox' ? el.checked : el.value; });
+    return p;
+  }
+  function profToFields(p) {
+    Object.keys(PROF_FIELDS).forEach(function (k) {
+      var el = $(PROF_FIELDS[k]), v = p[k];
+      if (el.type === 'checkbox') el.checked = v !== false; else el.value = v === undefined || v === null ? '' : v;
+    });
+    $('nMountSel').innerHTML = ''; $('mountSelWrap').style.display = 'none';
+  }
+  function initProfiles() {
+    if (!settings.ntripProfiles || !settings.ntripProfiles.length) {
+      var first = profFromFields($('nHost').value.indexOf('smartnet') >= 0 ? 'SmartNet' : 'Profil 1');
+      settings.ntripProfiles = [first, {
+        name: 'CAN-NET', host: 'gps.can-net.ca', port: '2300', user: '29655002000', pass: '', mount: 'qcvrsrtcm32', gga: true, agent: ''
+      }];
+      if (first.host === 'gps.can-net.ca') settings.ntripProfiles.pop();
+      settings.ntripActive = 0;
+      save(STORE_SETTINGS, settings);
+    }
+    renderProfiles();
+  }
+  function renderProfiles() {
+    var sel = $('nProfile'); sel.innerHTML = '';
+    settings.ntripProfiles.forEach(function (p, i) { addOpt(sel, String(i), p.name || ('Profil ' + (i + 1))); });
+    sel.value = String(settings.ntripActive || 0);
+    $('nProfName').value = settings.ntripProfiles[settings.ntripActive || 0].name || '';
+    $('btnProfDel').disabled = settings.ntripProfiles.length < 2;
+  }
+  function saveActiveProfile() {
+    var i = settings.ntripActive || 0, cur = settings.ntripProfiles[i];
+    settings.ntripProfiles[i] = profFromFields(cur ? cur.name : 'Profil');
+    persistFields();
+  }
+  function switchProfile(i) {
+    if (state.ntripOn) { setNtripMsg('Arrêter les corrections avant de changer de profil.', 'warn'); renderProfiles(); return; }
+    saveActiveProfile();
+    settings.ntripActive = i;
+    profToFields(settings.ntripProfiles[i]);
+    persistFields(); renderProfiles();
+    state.base = null;
+    setNtripMsg('Profil « ' + settings.ntripProfiles[i].name + ' » chargé.');
+  }
+  function newProfile() {
+    if (state.ntripOn) { setNtripMsg('Arrêter les corrections avant de changer de profil.', 'warn'); return; }
+    saveActiveProfile();
+    settings.ntripProfiles.push({ name: 'Profil ' + (settings.ntripProfiles.length + 1), host: '', port: '2101', user: '', pass: '', mount: '', gga: true, agent: '' });
+    switchProfile(settings.ntripProfiles.length - 1);
+    $('nProfName').focus(); $('nProfName').select();
+  }
+  function renameProfile() {
+    var p = settings.ntripProfiles[settings.ntripActive || 0], name = $('nProfName').value.trim();
+    if (!name) { $('nProfName').value = p.name; return; }
+    p.name = name; save(STORE_SETTINGS, settings); renderProfiles();
+  }
+  function deleteProfile() {
+    if (settings.ntripProfiles.length < 2 || state.ntripOn) return;
+    var i = settings.ntripActive || 0;
+    if (!confirm('Supprimer le profil « ' + settings.ntripProfiles[i].name + ' » ?')) return;
+    settings.ntripProfiles.splice(i, 1);
+    settings.ntripActive = 0;
+    profToFields(settings.ntripProfiles[0]); persistFields(); renderProfiles();
+  }
+
   // ---------- NTRIP ----------
   function setNtripMsg(text, cls) { var m = $('ntripMsg'); m.textContent = text; m.className = 'msg' + (cls ? ' ' + cls : ''); }
   function ntripStart() {
@@ -184,7 +256,7 @@
       $('nUser').value.trim(), $('nPass').value);
   }
   function ntripStop() {
-    state.ntripOn = false;
+    state.ntripOn = false; state.base = null;
     $('btnNtrip').disabled = false; $('btnNtripStop').disabled = true;
     if (Native) Native.ntripStop();
     setNtripMsg('Corrections arrêtées.');
@@ -228,11 +300,17 @@
       r.systeme = cv.hz.epsg ? 'EPSG:' + cv.hz.epsg : 'Geographiques';
       r.systemeAlti = cv.z !== null ? 'EPSG:10588' + (cv.vt.grid ? ' (' + cv.vt.grid + ')' : ' (separation fixe)') : 'Ellipsoidale';
     }
+    r.baseKm = baseKm(); r.baseId = state.base ? state.base.id : null;
+    if (r.n && r.baseKm !== null && r.baseKm > numVal('jBaseMax', 10)) {
+      r.reasons.push('Ligne de base ' + r.baseKm.toFixed(1) + ' km > ' + numVal('jBaseMax', 10) + ' km : altitude moins fiable, répéter plus tard ou fermer sur un repère');
+      r.baseWarn = true;
+    }
     state.pending = r;
     var box = $('result'); box.style.display = 'block';
     $('rTitle').textContent = 'Point ' + $('mNom').value.trim();
     var msg = $('rMsg');
-    if (r.ok) { msg.className = 'msg ok'; msg.textContent = 'Critères respectés.' + (r.reasons.length ? ' ' + r.reasons.join(' · ') : ''); }
+    if (r.ok && r.baseWarn) { msg.className = 'msg warn'; msg.textContent = 'Critères respectés, mais : ' + r.reasons.join(' · '); }
+    else if (r.ok) { msg.className = 'msg ok'; msg.textContent = 'Critères respectés.' + (r.reasons.length ? ' ' + r.reasons.join(' · ') : ''); }
     else { msg.className = 'msg bad'; msg.textContent = r.reasons.join(' · ') || 'Mesure invalide.'; }
     var rows = [];
     if (r.n) {
@@ -246,7 +324,8 @@
         ['Précision H / V', fmtCm(r.sigmaH) + ' / ' + fmtCm(r.sigmaV)],
         ['Dispersion H / V', fmtCm(r.spreadH) + ' / ' + fmtCm(r.spreadV)],
         ['Époques', r.n + ' retenues' + (r.rejected ? ', ' + r.rejected + ' rejetées (non incluses dans la moyenne)' : '')],
-        ['Solution', Nmea.FIX_LABELS[r.quality] || r.quality]
+        ['Solution', Nmea.FIX_LABELS[r.quality] || r.quality],
+        ['Ligne de base', r.baseKm === null ? 'inconnue' : r.baseKm.toFixed(1) + ' km' + (r.baseId !== null ? ' (station ' + r.baseId + ')' : '')]
       ]);
     } else rows = [['Époques rejetées', String(r.rejected)]];
     $('rList').innerHTML = rows.map(function (x) { return '<dt>' + x[0] + '</dt><dd>' + x[1] + '</dd>'; }).join('');
@@ -258,6 +337,7 @@
     var p = {
       leve: $('mLeve').value.trim(), nom: $('mNom').value.trim(), code: $('mCode').value.trim(), note: $('mNote').value.trim(),
       est: r.est, nord: r.nord, alt: r.alt, systeme: r.systeme, systemeAlti: r.systemeAlti, sep: r.sep,
+      baseKm: r.baseKm, baseId: r.baseId,
       lat: r.lat, lon: r.lon, hEll: r.hEll, sigmaH: r.sigmaH, sigmaV: r.sigmaV, n: r.n, rejected: r.rejected,
       qualityLabel: (Nmea.FIX_LABELS[r.quality] || r.quality) + (r.ok ? '' : ' (hors critères)'),
       pole: r.pole, apc: r.apc, recepteur: state.driver ? state.driver.label : '', start: r.start, end: r.end
@@ -271,6 +351,13 @@
   }
   function dropPoint() { state.pending = null; state.recorder = null; $('result').style.display = 'none'; $('prog').style.width = '0%'; }
   function redo() { dropPoint(); startMeasure(); }
+
+  // ---------- Ligne de base (position de la station lue dans les corrections) ----------
+  function baseKm() {
+    var g = state.gga, b = state.base;
+    if (!g || !b || g.hEll === null || Date.now() - b.at > 120000) return null;
+    return Ntrip.baselineKm(g.lat, g.lon, g.hEll, b.x, b.y, b.z);
+  }
 
   // ---------- Travail : nom du levé et systèmes ----------
   function job() { return { hz: $('jHz').value, vt: $('jVt').value, sep: numVal('jSep', NaN) }; }
@@ -363,6 +450,9 @@
           setNtripMsg((ev.msg || ev.state) + kb, cls);
           if (ev.state === 'stopped') { state.ntripOn = false; $('btnNtrip').disabled = false; $('btnNtripStop').disabled = true; }
           break;
+        case 'base':
+          state.base = { id: ev.id, x: ev.x, y: ev.y, z: ev.z, at: Date.now() };
+          break;
         case 'sourcetable':
           if (ev.error) { setNtripMsg('Liste impossible : ' + ev.error + ' (vérifier le serveur, le port et la connexion Internet).', 'bad'); break; }
           var pos = state.gga && state.gga.lat !== null ? { lat: state.gga.lat, lon: state.gga.lon } : null;
@@ -409,7 +499,12 @@
   $('btnNtrip').addEventListener('click', ntripStart);
   $('btnNtripStop').addEventListener('click', ntripStop);
   $('btnSource').addEventListener('click', sourcetable);
-  $('nMountSel').addEventListener('change', function () { if (this.value) { $('nMount').value = this.value; persistFields(); } });
+  $('nProfile').addEventListener('change', function () { switchProfile(parseInt(this.value, 10)); });
+  $('btnProfNew').addEventListener('click', newProfile);
+  $('nProfName').addEventListener('change', renameProfile);
+  $('btnProfDel').addEventListener('click', deleteProfile);
+  Object.keys(PROF_FIELDS).forEach(function (k) { $(PROF_FIELDS[k]).addEventListener('change', saveActiveProfile); });
+  $('nMountSel').addEventListener('change', function () { if (this.value) { $('nMount').value = this.value; saveActiveProfile(); } });
   $('btnMeasure').addEventListener('click', startMeasure);
   $('btnCancel').addEventListener('click', cancelMeasure);
   $('btnToday').addEventListener('click', today);
@@ -443,6 +538,7 @@
   applyTheme();
   onDriverChange();
   refreshDevices();
+  initProfiles();
   renderPoints();
   updateGhost();
   updateJobUi();

@@ -265,4 +265,10 @@ test('table des sources NTRIP : décodage STR et tri (réseau, constellations, d
   assert.ok(Math.abs(l[2].distKm - 2.1) < 0.5 && /base à 2 km/.test(l[2].label), l[2].label);
 });
 
+test('ligne de base : station 3601 (message 1005) à 31,7 km du trépied, comme Emlid Flow', () => {
+  const Ntrip = require(path.join(www, 'ntrip.js'));
+  const km = Ntrip.baselineKm(46.93376176, -71.88125931, 172.466 + 0.145, 1352930.0368, -4170769.2850, 4616433.5744);
+  assert.ok(Math.abs(km - 31.718) < 0.01, 'ligne de base ' + km + ' km (Flow : 31,718)');
+});
+
 console.log(`\n${passed} tests réussis`);

@@ -22,12 +22,15 @@ import java.util.Set;
  * Android -> JS : window.GnssApp.onNative({t: ...}).
  */
 @SuppressLint("MissingPermission")
-public class GnssBridge implements BluetoothLink.Listener, NtripClient.Listener {
+public class GnssBridge implements BluetoothLink.Listener, NtripClient.Listener, RtcmScanner.Listener {
 
     private final MainActivity activity;
     private final WebView web;
     private final BluetoothLink link;
     private final NtripClient ntrip;
+    private final RtcmScanner rtcm = new RtcmScanner(this);
+    private long lastStationAt;
+    private double lastX, lastY, lastZ;
 
     public GnssBridge(MainActivity activity, WebView web) {
         this.activity = activity;
@@ -185,6 +188,25 @@ public class GnssBridge implements BluetoothLink.Listener, NtripClient.Listener 
     @Override
     public void onCorrections(byte[] data, int off, int len) {
         link.write(data, off, len);
+        rtcm.push(data, off, len); // lecture de la position de la base (messages 1005/1006)
+    }
+
+    @Override
+    public void onStation(int id, double x, double y, double z) {
+        long now = System.currentTimeMillis();
+        boolean moved = Math.abs(x - lastX) + Math.abs(y - lastY) + Math.abs(z - lastZ) > 1.0;
+        if (!moved && now - lastStationAt < 30000) return;
+        lastStationAt = now; lastX = x; lastY = y; lastZ = z;
+        JSONObject ev = new JSONObject();
+        try {
+            ev.put("t", "base");
+            ev.put("id", id);
+            ev.put("x", x);
+            ev.put("y", y);
+            ev.put("z", z);
+        } catch (JSONException ignored) {
+        }
+        emit(ev);
     }
 
     public void onFileSaved(boolean ok, String msg) {

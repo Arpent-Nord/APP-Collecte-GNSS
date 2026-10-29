@@ -41,7 +41,8 @@ header.top { position: sticky; top: 0; z-index: 5; background: var(--surface); b
 h1 { margin: 0; font-size: 20px; font-weight: 700; flex: 1; }
 .theme { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 9px; cursor: pointer; }
 
-.statusbar { display: grid; grid-template-columns: auto 1fr 1fr 1fr; gap: 8px; align-items: center; padding: 10px 0; }
+.statusbar { display: grid; grid-template-columns: auto 1fr 1fr 1fr 1fr; gap: 8px; align-items: center; padding: 10px 0; }
+.kv.far b { color: var(--warn); }
 .fix { font-family: 'Barlow Semi Condensed', sans-serif; font-weight: 700; padding: 6px 12px; border-radius: 999px; font-size: 15px; white-space: nowrap;
   background: var(--bad-soft); color: var(--bad); }
 .fix.q4 { background: var(--ok-soft); color: var(--ok); }
@@ -108,7 +109,7 @@ details summary { cursor: pointer; font-weight: 600; }
 .jobline b { color: var(--ink); }
 .mode { font-size: 12px; color: var(--muted); text-align: center; padding: 8px 0 24px; }
 @media (max-width: 420px) {
-  .statusbar { grid-template-columns: auto 1fr 1fr; }
+  .statusbar { grid-template-columns: auto 1fr 1fr 1fr; }
   .statusbar .kv.sats { display: none; }
   .details { grid-template-columns: 1fr 1fr; }
 }
@@ -126,6 +127,7 @@ details summary { cursor: pointer; font-weight: 600; }
     <div class="kv">Préc. H<b id="sbSH">—</b></div>
     <div class="kv">Préc. V<b id="sbSV">—</b></div>
     <div class="kv sats">Satellites<b id="sbSats">—</b></div>
+    <div class="kv" id="sbBaseKv">Base<b id="sbBase">—</b></div>
   </div>
   <nav class="tabs">
     <button data-tab="travail">Travail</button>
@@ -156,6 +158,8 @@ details summary { cursor: pointer; font-weight: 600; }
         <label class="full">Altitudes
           <select id="jVt"></select>
         </label>
+        <label>Ligne de base max (km)<input id="jBaseMax" inputmode="decimal" value="10"></label>
+        <p class="hint" style="align-self:end">Au-delà, la mesure est signalée : altitude moins fiable (base éloignée).</p>
         <label class="full" id="jSepWrap">Séparation du géoïde au chantier, N (m)
           <input id="jSep" inputmode="decimal" placeholder="ex. -28.192">
         </label>
@@ -201,6 +205,7 @@ details summary { cursor: pointer; font-weight: 600; }
         <div class="kv">Est<b id="dE">—</b></div>
         <div class="kv">Nord<b id="dN">—</b></div>
         <div class="kv">Altitude<b id="dZ">—</b></div>
+        <div class="kv" id="dBaseKv">Ligne de base<b id="dBase">—</b></div>
       </div>
       <details style="margin-top:12px"><summary>Journal NMEA</summary><pre class="log" id="log"></pre></details>
     </div>
@@ -208,6 +213,14 @@ details summary { cursor: pointer; font-weight: 600; }
     <div class="card">
       <h2>Corrections RTK (NTRIP)</h2>
       <div class="grid">
+        <label class="full">Profil
+          <div class="inline" style="margin-top:4px">
+            <select id="nProfile" style="margin-top:0"></select>
+            <button class="btn" id="btnProfNew" title="Nouveau profil">＋</button>
+            <button class="btn danger" id="btnProfDel" title="Supprimer le profil">✕</button>
+          </div>
+        </label>
+        <label class="full">Nom du profil<input id="nProfName" autocomplete="off"></label>
         <label>Serveur<input id="nHost" placeholder="ex. caster.exemple.ca" autocomplete="off"></label>
         <label>Port<input id="nPort" inputmode="numeric" value="2101"></label>
         <label>Utilisateur<input id="nUser" autocomplete="off"></label>
