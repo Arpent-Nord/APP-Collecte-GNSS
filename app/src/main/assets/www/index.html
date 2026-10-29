@@ -62,7 +62,8 @@ section.tab.active { display: block; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grid .full { grid-column: 1 / -1; }
 label { display: block; font-size: 13px; color: var(--muted); font-weight: 600; }
-input, select { width: 100%; margin-top: 4px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+input, select { width: 100%; margin-top: 4px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+  font-size: 16px; font-weight: 400; color: var(--ink); }
 input[type=checkbox] { width: auto; margin: 0 6px 0 0; }
 .check { display: flex; align-items: center; font-size: 14px; color: var(--ink); font-weight: 400; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
@@ -89,6 +90,22 @@ td.num { font-variant-numeric: tabular-nums; }
 .tablewrap { overflow-x: auto; }
 pre.log { max-height: 180px; overflow: auto; font-size: 11px; background: var(--bg); padding: 8px; border-radius: 8px; margin: 0; white-space: pre-wrap; word-break: break-all; }
 details summary { cursor: pointer; font-weight: 600; }
+.ghostwrap { position: relative; margin-top: 4px; background: var(--bg); border-radius: 8px; }
+.ghostwrap input { position: relative; z-index: 1; background: transparent; margin-top: 0; font-family: inherit; letter-spacing: .02em; }
+.ghost { position: absolute; left: 0; top: 0; padding: 9px 11px; border: 1px solid transparent; pointer-events: none; white-space: pre;
+  color: var(--muted); opacity: .6; letter-spacing: .02em; font-size: 16px; font-weight: 400; line-height: normal; }
+.ghostwrap input { padding: 9px 10px; line-height: normal; }
+.ghost .typed { color: transparent; }
+.inline { display: flex; gap: 8px; align-items: flex-end; }
+.inline > label { flex: 1; }
+.measbox { display: none; margin-top: 12px; padding: 12px 14px; border-radius: var(--radius); background: var(--primary-soft); border: 1px solid var(--primary); }
+.measbox.on { display: block; }
+.measbox .top { display: flex; align-items: center; gap: 10px; }
+.measbox .txt { flex: 1; font-weight: 600; }
+.measbox .x { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); font-size: 20px; cursor: pointer; color: var(--bad); }
+.measbox .progress { margin-top: 10px; }
+.jobline { font-size: 14px; color: var(--muted); margin: 0 0 12px; }
+.jobline b { color: var(--ink); }
 .mode { font-size: 12px; color: var(--muted); text-align: center; padding: 8px 0 24px; }
 @media (max-width: 420px) {
   .statusbar { grid-template-columns: auto 1fr 1fr; }
@@ -111,6 +128,7 @@ details summary { cursor: pointer; font-weight: 600; }
     <div class="kv sats">Satellites<b id="sbSats">—</b></div>
   </div>
   <nav class="tabs">
+    <button data-tab="travail">Travail</button>
     <button data-tab="recepteur" class="active">Récepteur</button>
     <button data-tab="mesure">Mesure</button>
     <button data-tab="points">Points <span id="nbPoints"></span></button>
@@ -118,6 +136,35 @@ details summary { cursor: pointer; font-weight: 600; }
 </header>
 
 <main>
+  <!-- ===================== TRAVAIL ===================== -->
+  <section class="tab" id="tab-travail">
+    <div class="card">
+      <h2>Travail</h2>
+      <div class="grid">
+        <div class="full">
+          <div class="inline">
+            <label>Nom du levé
+              <div class="ghostwrap"><span class="ghost" id="leveGhost"></span><input id="mLeve" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+            </label>
+            <button class="btn" id="btnToday" title="Inscrire la date du jour (AAMMJJ)">Date du jour</button>
+          </div>
+          <p class="hint">Format AAMMJJSECT#NATSS (NDA-001) : le gabarit reste affiché en gris pendant la saisie.</p>
+        </div>
+        <label class="full">Système de coordonnées planes
+          <select id="jHz"></select>
+        </label>
+        <label class="full">Altitudes
+          <select id="jVt"></select>
+        </label>
+        <label class="full" id="jSepWrap">Séparation du géoïde au chantier, N (m)
+          <input id="jSep" inputmode="decimal" placeholder="ex. -28.192">
+        </label>
+      </div>
+      <p class="hint" id="jSepHint">Altitude = hauteur ellipsoïdale − N. Valeur à prendre d'un point connu du chantier (ex. Emlid Flow : hauteur ellipsoïdale − altitude). Valable pour un chantier de quelques centaines de mètres.</p>
+      <div class="msg" id="jobMsg"></div>
+    </div>
+  </section>
+
   <!-- ===================== RÉCEPTEUR ===================== -->
   <section class="tab active" id="tab-recepteur">
     <div class="card">
@@ -151,6 +198,9 @@ details summary { cursor: pointer; font-weight: 600; }
         <div class="kv">Trames/s<b id="dRate">—</b></div>
         <div class="kv">Trames refusées<b id="dBad">0</b></div>
         <div class="kv">Station réf.<b id="dRef">—</b></div>
+        <div class="kv">Est<b id="dE">—</b></div>
+        <div class="kv">Nord<b id="dN">—</b></div>
+        <div class="kv">Altitude<b id="dZ">—</b></div>
       </div>
       <details style="margin-top:12px"><summary>Journal NMEA</summary><pre class="log" id="log"></pre></details>
     </div>
@@ -181,16 +231,16 @@ details summary { cursor: pointer; font-weight: 600; }
   <!-- ===================== MESURE ===================== -->
   <section class="tab" id="tab-mesure">
     <div class="card">
-      <h2>Levé</h2>
+      <h2>Point</h2>
+      <p class="jobline" id="jobLine"></p>
       <div class="grid">
-        <label class="full">Nom du levé<input id="mLeve" placeholder="AAMMJJSECT#NATSS" autocomplete="off"></label>
         <label>Point<input id="mNom" value="1" autocomplete="off"></label>
         <label>Code<input id="mCode" autocomplete="off"></label>
         <label>Hauteur de canne (m)<input id="mPole" inputmode="decimal" value="2.000"></label>
-        <label>Décalage récepteur (m)<input id="mApc" inputmode="decimal" value="0.000"></label>
+        <label>Décalage vertical récepteur (m)<input id="mApc" inputmode="decimal" value="0.000"></label>
         <label class="full">Note<input id="mNote" autocomplete="off"></label>
       </div>
-      <p class="hint">Décalage récepteur : distance entre le bas du récepteur et le point de référence de la position transmise. À valider pour chaque modèle.</p>
+      <p class="hint">Décalage vertical : distance verticale entre le dessus de la canne (base du récepteur) et le point de référence de la position transmise. Emlid Reach RX : 0,145 m. Retenu pour chaque modèle de récepteur.</p>
     </div>
     <div class="card">
       <h2>Critères</h2>
@@ -203,7 +253,13 @@ details summary { cursor: pointer; font-weight: 600; }
       </div>
     </div>
     <button class="btn primary big" id="btnMeasure" disabled>Mesurer</button>
-    <div class="progress"><div id="prog"></div></div>
+    <div class="measbox" id="measBox">
+      <div class="top">
+        <span class="txt" id="measTxt">Mesure…</span>
+        <button class="x" id="btnCancel" title="Annuler la mesure" aria-label="Annuler la mesure">✕</button>
+      </div>
+      <div class="progress"><div id="prog"></div></div>
+    </div>
     <div class="card result" id="result" style="margin-top:14px; display:none">
       <h2 id="rTitle">Résultat</h2>
       <div class="msg" id="rMsg"></div>
@@ -222,7 +278,7 @@ details summary { cursor: pointer; font-weight: 600; }
       <h2>Points mesurés</h2>
       <div class="tablewrap">
         <table>
-          <thead><tr><th>Point</th><th>Code</th><th>Préc. H</th><th>Préc. V</th><th>Époques</th><th></th></tr></thead>
+          <thead><tr><th>Point</th><th>Code</th><th>Est</th><th>Nord</th><th>Altitude</th><th>Préc. H</th><th>Préc. V</th><th></th></tr></thead>
           <tbody id="ptBody"></tbody>
         </table>
       </div>
@@ -232,7 +288,7 @@ details summary { cursor: pointer; font-weight: 600; }
         <button class="btn danger" id="btnClear">Tout effacer</button>
       </div>
       <div class="msg" id="ptMsg" style="display:none"></div>
-      <p class="hint">Coordonnées géographiques et hauteur ellipsoïdale dans le système des corrections reçues (ex. NAD83(SCRS)). Projections MTM et géoïde CGVD2013 : prochaine étape.</p>
+      <p class="hint">Le CSV contient les coordonnées planes et l'altitude du travail, ainsi que la latitude, la longitude et la hauteur ellipsoïdale dans le système des corrections reçues (SmartNet : NAD83(SCRS)).</p>
     </div>
   </section>
   <div class="mode" id="modeInfo"></div>
@@ -241,6 +297,10 @@ details summary { cursor: pointer; font-weight: 600; }
 <script src="js/nmea.js"></script>
 <script src="js/drivers.js"></script>
 <script src="js/survey.js"></script>
+<script src="js/proj.js"></script>
+<script src="grids/ht2_2010v70.js"></script>
+<script src="grids/ht2_2002v70.js"></script>
+<script src="grids/na83scrs.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

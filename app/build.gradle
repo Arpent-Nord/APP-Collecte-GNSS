@@ -2,7 +2,7 @@ plugins {
     id 'com.android.application'
 }
 
-// Numéro de version : 0.1.<numéro de compilation GitHub>
+// Numéro de version : 0.2.<numéro de compilation GitHub>
 def buildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as Integer
 
 android {
@@ -14,7 +14,7 @@ android {
         minSdk 26
         targetSdk 34
         versionCode buildNumber
-        versionName "0.1.${buildNumber}"
+        versionName "0.2.${buildNumber}"
     }
 
     buildFeatures {

@@ -1,7 +1,7 @@
 # Collecte GNSS — Arpent-Nord
 
 Application Android de collecte qui se branche directement aux récepteurs GNSS par Bluetooth, sans passer par les applications des fabricants.
-**Prototype — étape 0** : connexion au récepteur, état RTK en direct, corrections NTRIP, mesure de points par moyenne avec critères, export CSV.
+**Version 0.2** : connexion au récepteur, état RTK en direct, corrections NTRIP, mesure de points par moyenne avec critères, **travail avec système de coordonnées (MTM, CGVD28)**, export CSV.
 
 ## Principe
 
@@ -61,11 +61,31 @@ Serveur NTRIP ──Internet──► Client NTRIP                              
 - [ ] Export CSV vers le dossier SharePoint/OneDrive du mandat.
 - [ ] Coupure volontaire (récepteur éteint, perte réseau) : l'application le signale et les corrections reprennent seules.
 
-## Limites connues du prototype
+## Travail et systèmes de coordonnées (version 0.2)
 
-- Coordonnées **géographiques** et hauteur **ellipsoïdale** dans le système des corrections reçues. La colonne `H_geoide_recepteur` utilise le géoïde interne du récepteur, **pas** CGVD2013.
-- L'application doit rester à l'écran pendant la collecte (l'écran reste allumé). Le fonctionnement en arrière-plan viendra à l'étape 1.
-- Pas encore de projections MTM, de liste de codes, ni d'implantation.
+Onglet **Travail** :
+
+- **Nom du levé** : le gabarit `AAMMJJSECT#NATSS` reste affiché en gris pendant la saisie. Le bouton « Date du jour » inscrit AAMMJJ.
+- **Coordonnées planes** : NAD83(SCRS) / MTM 6, 7, 8 (EPSG 2948, 2949, 2950). La projection est vérifiée contre PROJ (écart < 1 mm) et contre Emlid Flow (point d'essai identique au millimètre).
+- NAD83 / MTM 6, 7, 8 (EPSG 32186, 32187, 32188) : conversion NAD83(SCRS) → NAD83 (1986) par la grille NTv2 officielle **NA83SCRS** du MRN (14 sous-grilles, `www/grids/na83scrs.js`). Aller et retour identiques à PROJ à moins de 1 mm.
+- **Altitudes CGVD28 (HTv2.0, EPSG 10588)** :
+  - **modèle HT2_2002v70** (par défaut, comme Emlid Flow) : `www/grids/ht2_2002v70.js`. Au point d'essai, altitude identique à Flow (200,788).
+  - modèle HT2_2010v70 (NAD83(SCRS) époque 2010) : `www/grids/ht2_2010v70.js`.
+  - Grilles de Ressources naturelles Canada (PROJ-data), extrait Québec 44,8–63° N, 57–80° O, identiques à PROJ à moins de 1 mm.
+  - **séparation fixe du chantier** (N, en m) : altitude = hauteur ellipsoïdale − N.
+- Projection MTM vérifiée aussi sur les exemples officiels du *Guide des référentiels géodésique et altimétrique au Québec* (MRNF, 2010).
+
+Mesure :
+
+- **Décalage vertical du récepteur** retenu par modèle (Emlid Reach RX : 0,145 m, valeur d'Emlid Flow).
+- La durée est comptée **à partir de la première époque en RTK fixe** : les époques en flottant sont rejetées et n'entrent jamais dans la moyenne.
+- Chaque précision (trame GST) est associée à l'époque de la même heure seulement.
+- Bouton ✕ pour annuler une mesure en cours.
+
+## Limites connues
+
+- L'application doit rester à l'écran pendant la collecte (le fonctionnement en arrière-plan viendra plus tard).
+- Pas encore de carte (orthophoto, routes), de liste de codes, ni d'implantation.
 - Trimble : NMEA seulement. Le décodeur GSOF est prévu.
 
 ## Feuille de route

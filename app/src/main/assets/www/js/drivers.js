@@ -32,6 +32,7 @@
     {
       id: 'emlid-rx', brand: 'Emlid', label: 'Emlid Reach RX', transport: 'bluetooth',
       createDecoder: nmeaDecoder,
+      apcDefault: 0.145, // décalage vertical utilisé par Emlid Flow pour le RX
       setup: 'Apparier le RX dans les réglages Bluetooth d’Android. Le RX transmet du NMEA et accepte les corrections par Bluetooth (à valider).'
     },
     {
@@ -50,6 +51,7 @@
     {
       id: 'simulation', brand: 'Essai', label: 'Simulation (sans récepteur)', transport: 'simulation',
       createDecoder: nmeaDecoder,
+      apcDefault: 0,
       setup: 'Génère des positions fictives pour essayer l’interface. Aucune donnée réelle.'
     }
   ];

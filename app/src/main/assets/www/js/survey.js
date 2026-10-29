@@ -32,35 +32,53 @@
     this.done = false;
   }
 
-  /* gga : trame GGA décodée ; gst : dernière GST décodée (ou null) ; now : ms */
+  /* gga : trame GGA décodée ; gst : dernière GST décodée (ou null) ; now : ms.
+   * La durée est comptée à partir de la PREMIÈRE époque acceptée : tant que la solution
+   * n'est pas en RTK fixe (si exigé), la mesure attend et les époques reçues sont rejetées. */
   Recorder.prototype.feed = function (gga, gst, now) {
     if (this.done) return this.status(now);
     now = now || Date.now();
-    if (this.tStart === null) this.tStart = now;
+    if (this.tFirst === undefined) this.tFirst = now;
     if (gga && gga.lat !== null && gga.lon !== null) {
       this.qualities[gga.quality] = (this.qualities[gga.quality] || 0) + 1;
       var acceptable = this.opts.requireFixed ? gga.quality === 4 : gga.quality > 0;
       if (acceptable && gga.hEll !== null) {
+        if (this.tStart === null) this.tStart = now;
+        // La GST n'est associée que si elle porte la même heure que la GGA (sinon elle
+        // appartient à l'époque précédente, possiblement en flottant) ; voir feedGst.
+        var same = gst && sameTime(gst.time, gga.time);
         this.samples.push({
-          lat: gga.lat, lon: gga.lon, hEll: gga.hEll, alt: gga.alt, sep: gga.geoidSep,
-          sLat: gst ? gst.sigmaLat : null, sLon: gst ? gst.sigmaLon : null, sAlt: gst ? gst.sigmaAlt : null,
+          t: gga.time, lat: gga.lat, lon: gga.lon, hEll: gga.hEll, alt: gga.alt, sep: gga.geoidSep,
+          sLat: same ? gst.sigmaLat : null, sLon: same ? gst.sigmaLon : null, sAlt: same ? gst.sigmaAlt : null,
           q: gga.quality
         });
       } else {
         this.rejected++;
       }
     }
-    if ((now - this.tStart) / 1000 >= this.opts.durationSec) {
+    if (this.tStart !== null && (now - this.tStart) / 1000 >= this.opts.durationSec) {
       this.done = true;
       this.tEnd = now;
     }
     return this.status(now);
   };
 
+  /* GST reçue après la GGA de la même époque : on complète la dernière époque acceptée. */
+  Recorder.prototype.feedGst = function (gst) {
+    var last = this.samples[this.samples.length - 1];
+    if (!last || !gst || last.sLat !== null || !sameTime(gst.time, last.t)) return;
+    last.sLat = gst.sigmaLat; last.sLon = gst.sigmaLon; last.sAlt = gst.sigmaAlt;
+  };
+
+  function sameTime(a, b) {
+    return !!(a && b && a.h === b.h && a.m === b.m && Math.abs(a.s - b.s) < 0.005);
+  }
+
   Recorder.prototype.status = function (now) {
     var el = this.tStart === null ? 0 : ((this.tEnd || now || Date.now()) - this.tStart) / 1000;
     return {
       done: this.done,
+      waiting: this.tStart === null,
       elapsed: el,
       progress: Math.min(1, el / this.opts.durationSec),
       accepted: this.samples.length,
@@ -118,7 +136,7 @@
       fixRatio: total ? s.length / total : 0,
       quality: s[0].q,
       pole: pole, apc: apc,
-      start: new Date(this.tStart).toISOString(),
+      start: new Date(this.tStart || this.tFirst || Date.now()).toISOString(),
       end: new Date(this.tEnd || Date.now()).toISOString(),
       reasons: reasons
     };
@@ -134,7 +152,8 @@
 
   var CSV_COLUMNS = [
     ['leve', 'Leve'], ['nom', 'Point'], ['code', 'Code'],
-    ['lat', 'Latitude'], ['lon', 'Longitude'], ['hEll', 'H_ellipsoidale'], ['hRec', 'H_geoide_recepteur'],
+    ['est', 'Est'], ['nord', 'Nord'], ['alt', 'Altitude'], ['systeme', 'Systeme_plan'], ['systemeAlti', 'Systeme_alti'],
+    ['lat', 'Latitude'], ['lon', 'Longitude'], ['hEll', 'H_ellipsoidale'], ['sep', 'Separation_geoide'],
     ['sigmaH', 'Precision_H'], ['sigmaV', 'Precision_V'], ['n', 'Epoques'], ['rejected', 'Epoques_rejetees'],
     ['qualityLabel', 'Solution'], ['pole', 'Hauteur_canne'], ['apc', 'Decalage_recepteur'],
     ['recepteur', 'Recepteur'], ['start', 'Debut_UTC'], ['end', 'Fin_UTC'], ['note', 'Note']
@@ -143,6 +162,7 @@
   function fmt(key, v) {
     if (v === null || v === undefined) return '';
     if (key === 'lat' || key === 'lon') return v.toFixed(9);
+    if (key === 'est' || key === 'nord' || key === 'alt' || key === 'sep') return v.toFixed(3);
     if (typeof v === 'number') return (key === 'n' || key === 'rejected') ? String(v) : v.toFixed(4);
     var s = String(v);
     if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
