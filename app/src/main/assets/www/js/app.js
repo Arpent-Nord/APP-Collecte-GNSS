@@ -178,9 +178,10 @@
     state.ntripOn = true; state.lastGgaToCaster = 0;
     $('btnNtrip').disabled = true; $('btnNtripStop').disabled = false;
     if (Native.ntripSetAgent) Native.ntripSetAgent($('nAgent').value.trim());
+    // La position est remise AVANT la connexion : certains serveurs (iMAX, VRS) l'exigent dès la demande.
+    if (state.gga && $('nGga').checked) { Native.ntripGga(state.gga.raw); state.lastGgaToCaster = Date.now(); }
     Native.ntripStart($('nHost').value.trim(), parseInt($('nPort').value, 10) || 2101, $('nMount').value.trim(),
       $('nUser').value.trim(), $('nPass').value);
-    if (state.gga && $('nGga').checked) { Native.ntripGga(state.gga.raw); state.lastGgaToCaster = Date.now(); }
   }
   function ntripStop() {
     state.ntripOn = false;

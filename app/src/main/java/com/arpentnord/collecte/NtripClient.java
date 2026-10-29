@@ -126,7 +126,10 @@ public class NtripClient {
             s.setSoTimeout(30000);
             socket = s;
             OutputStream o = s.getOutputStream();
-            o.write(request("/" + mount, host, port, user, pass, ntripVersion).getBytes(StandardCharsets.US_ASCII));
+            String gga = lastGga;
+            o.write(request("/" + mount, host, port, user, pass, ntripVersion, gga).getBytes(StandardCharsets.US_ASCII));
+            // NTRIP 1.0 : la position suit immédiatement la demande (pratique courante des récepteurs).
+            if (ntripVersion == 1 && gga != null) o.write((gga + "\r\n").getBytes(StandardCharsets.US_ASCII));
             o.flush();
 
             InputStream in = s.getInputStream();
@@ -202,11 +205,17 @@ public class NtripClient {
     }
 
     private static String request(String path, String host, int port, String user, String pass, int version) {
+        return request(path, host, port, user, pass, version, null);
+    }
+
+    private static String request(String path, String host, int port, String user, String pass, int version, String gga) {
         StringBuilder r = new StringBuilder();
         if (version == 2) {
             r.append("GET ").append(path).append(" HTTP/1.1\r\n");
             r.append("Host: ").append(host).append(":").append(port).append("\r\n");
             r.append("Ntrip-Version: Ntrip/2.0\r\n");
+            // NTRIP 2.0 : position du récepteur dans l'en-tête (VRS / iMAX, licences régionales).
+            if (gga != null) r.append("Ntrip-GGA: ").append(gga.trim()).append("\r\n");
         } else {
             r.append("GET ").append(path).append(" HTTP/1.0\r\n");
             r.append("Host: ").append(host).append("\r\n");
