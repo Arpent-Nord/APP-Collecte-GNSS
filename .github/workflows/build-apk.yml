@@ -48,7 +48,7 @@ jobs:
       - name: Renommer l'APK
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/release/*.apk "out/Collecte-GNSS-0.1.${GITHUB_RUN_NUMBER}.apk"
+          cp app/build/outputs/apk/release/*.apk "out/Collecte-GNSS-0.2.${GITHUB_RUN_NUMBER}.apk"
           ls -la out
 
       - uses: actions/upload-artifact@v4
@@ -59,8 +59,9 @@ jobs:
       - name: Publier dans « Releases » (téléchargement direct)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.${{ github.run_number }}
-          name: Collecte GNSS 0.1.${{ github.run_number }}
-          body: Prototype — étape 0. Installer l'APK sur l'appareil Android (voir README).
-          prerelease: true
+          tag_name: v0.2.${{ github.run_number }}
+          name: Collecte GNSS 0.2.${{ github.run_number }}
+          body: Version 0.2 — travail (MTM, CGVD28), mesure améliorée. Installer l’APK sur l’appareil Android (voir README).
+          prerelease: false
+          make_latest: true
           files: out/*.apk
