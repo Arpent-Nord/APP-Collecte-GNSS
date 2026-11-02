@@ -25,6 +25,7 @@ Serveur NTRIP ──Internet──► Client NTRIP                              
 | `app/src/main/assets/www/` | Interface : `index.html`, `js/`, polices Barlow |
 | `app/src/main/java/com/arpentnord/collecte/` | Module natif Android |
 | `tests/core.test.js` | Tests du noyau (`node tests/core.test.js`) |
+| `tools/maj-codes.js` | Mise à jour de la liste des codes à partir de « Recherche de codes » |
 | `.github/workflows/build-apk.yml` | Compilation automatique de l'APK par GitHub |
 
 ## Mise en place (une seule fois)
@@ -94,6 +95,18 @@ Dès que le récepteur est connecté, un **service Android au premier plan** pre
 
 Onglet Récepteur, carte « Travail écran éteint » : option « Garder l'écran allumé » et bouton **Autoriser l'arrière-plan** (exclusion de l'optimisation de la batterie, recommandée sur les tablettes Samsung).
 
+## Codes de points et nomenclature (NDA-001)
+
+- **Code (Pcode)** (onglet Mesure) : recherche par numéro, abréviation ou mot (526, GAR, garde), comme « Recherche de codes ». Les 8 derniers codes utilisés restent en raccourci.
+- **Description du point** au format `Pcode String.Contrôle` (ex. `526 1.1`) : numéro de ligne (bouton **Nouvelle** = ligne suivante + `.1`) et code de contrôle (.1 à .7). Le contrôle ne vaut que pour un point ; après `.2` (fermer), la ligne suivante est préparée. **Liaisons et calculs** : `_`, 2P, 2PD, 2D, 3PP, 4P, 3C, RECT s'ajoutent à la description.
+- **Nom du levé** `AAMMJJSECT#NATSS` (onglet Travail) : vérifié pendant la saisie (date, type, nature, votre code) ; « Composer le nom du levé » l'assemble à partir du secteur, du type et de la nature.
+- **Numéros de points** `AJJJSSNNN` (NDA-001 V03, 10.3 ; ex. 605957001) : A = dernier chiffre de l’année, JJJ = jour de l’année, SS = votre code (01 à 99), NNN = 001 à 199 en levé, 200 à 400 en implantation (type 2 du nom du levé). Le prochain numéro libre du jour est proposé (bouton **Prochain**). Mode « Libre » offert. Année en 0 : chiffre A à inscrire.
+- **Secteur** : inscrire un numéro de contrat (AN-26-005) donne le secteur par défaut (A005, NDA-001 5.3).
+- **reference.json** (Administration, `01_TRAITEMENT/_SYSTEME`) : se charge depuis l'onglet Travail ; seuls les codes d'arpenteurs et la table des natures sont gardés, **sur l'appareil seulement**. Sans lui : copie publique des natures.
+- La liste des codes (`www/js/codes-data.js`) est **générée** à partir de la version publiée de « Recherche de codes » :
+  `node tools/maj-codes.js chemin/APP-PCodes/index.html` (dépôt public `Arpent-Nord/APP-PCodes`). À refaire quand la liste change.
+- CSV : colonne `Description_code` ajoutée à la fin.
+
 ## Corrections par radio (LoRa, UHF) ou modem du récepteur
 
 Onglet Récepteur, carte « Corrections RTK », **Source des corrections** :
@@ -112,7 +125,7 @@ hauteur de référence du NMEA (comparer à Captivate sur un point connu). La co
 
 ## Limites connues
 
-- Pas encore de carte (orthophoto, routes), de liste de codes, ni d'implantation.
+- Pas encore de carte (orthophoto, routes), ni d'implantation.
 - Trimble : NMEA seulement. Le décodeur GSOF est prévu.
 
 ## Feuille de route

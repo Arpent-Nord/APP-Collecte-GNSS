@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.view.WindowManager;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -25,10 +26,12 @@ public class MainActivity extends Activity {
     private static final int REQ_BT = 1;
     private static final int REQ_SAVE = 2;
     private static final int REQ_NOTIF = 3;
+    private static final int REQ_OPEN = 4;
 
     private WebView web;
     private GnssBridge bridge;
     private String pendingContent;
+    private ValueCallback<Uri[]> fileCallback;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -43,7 +46,24 @@ public class MainActivity extends Activity {
         ws.setAllowFileAccess(true);
         ws.setMediaPlaybackRequiresUserGesture(true);
         web.setWebViewClient(new WebViewClient());
-        web.setWebChromeClient(new WebChromeClient()); // boîtes de confirmation JS
+        web.setWebChromeClient(new WebChromeClient() {   // boîtes de confirmation JS
+            /** <input type="file"> : ouvre le sélecteur Android (reference.json depuis OneDrive, SharePoint, Téléchargements…). */
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (fileCallback != null) fileCallback.onReceiveValue(null);
+                fileCallback = callback;
+                Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                i.addCategory(Intent.CATEGORY_OPENABLE);
+                i.setType("*/*");
+                try {
+                    startActivityForResult(i, REQ_OPEN);
+                } catch (Exception e) {
+                    fileCallback = null;
+                    return false;
+                }
+                return true;
+            }
+        });
 
         bridge = new GnssBridge(this, web);
         web.addJavascriptInterface(bridge, "GnssNative");
@@ -131,6 +151,12 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_OPEN) {
+            ValueCallback<Uri[]> cb = fileCallback;
+            fileCallback = null;
+            if (cb != null) cb.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
+            return;
+        }
         if (requestCode != REQ_SAVE) return;
         String content = pendingContent;
         pendingContent = null;

@@ -283,12 +283,12 @@ test('radio : base inscrite en MTM 7 à 1 km du mobile -> ligne de base 1,000 km
 
 test('CSV : source et âge des corrections en fin de ligne ; nom de base avec virgule protégé', () => {
   const cols = Survey.CSV_COLUMNS.map((c) => c[1]);
-  assert.deepStrictEqual(cols.slice(-3), ['Note', 'Source_corrections', 'Age_corr_max_s']);
+  assert.deepStrictEqual(cols.slice(-4), ['Note', 'Source_corrections', 'Age_corr_max_s', 'Description_code']);
   assert.strictEqual(cols.indexOf('Station_base'), 18); // ordre historique conservé
   const csv = Survey.toCsv([{ nom: 'P1', baseId: 'BASE 1, repère', corrSrc: 'Radio (recepteur)', ageMax: 1.23 }]);
   const row = csv.split('\r\n')[1];
   assert.ok(row.includes('"BASE 1, repère"'), row);
-  assert.ok(row.endsWith(',Radio (recepteur),1.2'), row);
+  assert.ok(row.endsWith(',Radio (recepteur),1.2,'), row);
 });
 
 test('pilote Leica (NMEA) disponible et décodeur fonctionnel', () => {
@@ -299,6 +299,79 @@ test('pilote Leica (NMEA) disponible et décodeur fonctionnel', () => {
   dec.pushText(Nmea.withChecksum('GNGGA,123519,4807.038,N,01131.000,E,4,08,0.9,545.4,M,46.9,M,1.0,0001') + '\r\n');
   const gga = got.find((e) => e.type === 'GGA');
   assert.ok(gga && gga.quality === 4 && gga.ageCorr === 1.0, JSON.stringify(got));
+});
+
+const Codes = require(path.join(www, 'codes.js'));
+
+test('Pcodes : liste publique chargée ; recherche par numéro, abréviation et mot', () => {
+  assert.ok(Codes.count() >= 400);
+  assert.strictEqual(Codes.search('4')[0].code, '4');               // numéro exact d'abord
+  assert.ok(Codes.search('40').every((c, i, l) => i === 0 || !(c.code.startsWith('40') && !l[i - 1].code.startsWith('40'))));
+  const clu = Codes.search('clu');
+  assert.strictEqual(clu[0].aph, 'CLU');                              // abréviation exacte en tête
+  assert.ok(Codes.search('controle photo').length >= 3);              // mots, sans accents
+  assert.strictEqual(Codes.byCode('1').aph, 'CPV');
+});
+
+test('Pcodes : description « Pcode String.Contrôle » décomposée et recomposée', () => {
+  assert.deepStrictEqual(Codes.parseDesc('526 1.1'), { base: '526', str: '1', ctl: '.1', extra: '' });
+  assert.deepStrictEqual(Codes.parseDesc('526 1.2_2.1'), { base: '526', str: '1', ctl: '.2', extra: '_2.1' });
+  assert.deepStrictEqual(Codes.parseDesc('526 1_2PD_1.00'), { base: '526', str: '1', ctl: '', extra: '_2PD_1.00' });
+  assert.deepStrictEqual(Codes.parseDesc('4'), { base: '4', str: '', ctl: '', extra: '' });
+  assert.strictEqual(Codes.compose('526', '1', '.1'), '526 1.1');
+  assert.strictEqual(Codes.compose('526', '', '.1'), '526');
+  assert.strictEqual(Codes.compose('231', '1', '.6', '_3C'), '231 1.6_3C');
+  assert.ok(Codes.commands().some((c) => c.code === '2PD') && Codes.CONTROLS.length === 8);
+});
+
+test('nom du levé AAMMJJSECT#NATSS : composition et vérification (NDA-001)', () => {
+  const d = new Date(2026, 10, 2);
+  const n = Codes.leveName({ date: d, sect: 'a005', type: '1', nat: 'exc', ss: '12' });
+  assert.strictEqual(n, '261102A0051EXC12');
+  assert.ok(Codes.validateLeve(n, '12').ok);
+  assert.ok(!Codes.validateLeve(n, '07').ok);                         // pas votre code
+  assert.ok(/16 caractères/.test(Codes.validateLeve('261102A0051EXC1').errors[0]));
+  assert.ok(Codes.validateLeve('261102A0051ZZZ12').errors.some((e) => /Nature/.test(e)));
+  assert.ok(Codes.validateLeve('261102A0059EXC12').errors.some((e) => /Type/.test(e)));
+});
+
+test('numéro de point AJJJSS001 : jour de l\u2019année et prochain numéro libre', () => {
+  const d = new Date(2026, 10, 2);                                    // 2 novembre 2026 = jour 306
+  assert.strictEqual(Codes.dayOfYear(d), 306);
+  const pre = Codes.pointPrefix(d, '7');
+  assert.strictEqual(pre, '630607');
+  assert.strictEqual(Codes.nextPointNumber(pre, []), '630607001');
+  assert.strictEqual(Codes.nextPointNumber(pre, ['630607001', '630607004', '630512009', 'P1']), '630607005');
+  assert.strictEqual(Codes.pointPrefix(new Date(2030, 0, 5), '12', '9'), '900512'); // année en 0 : A fourni
+});
+
+test('reference.json : arpenteurs et natures retenus, rien d\u2019autre ; retour à la copie publique', () => {
+  const kept = Codes.loadReference({ version: '2026-10-26', arpenteurs: [{ ss: 7, nom: 'Test', entite: 'AN', actif: true }],
+    nat: [{ code: 'EXC', description: 'Déblai' }, { code: 'xx', description: 'mauvais' }], sharepoint: { AN: 'https://exemple' } });
+  assert.deepStrictEqual(kept, { version: '2026-10-26', arpenteurs: [{ ss: '07', nom: 'Test', actif: true }], nat: [{ code: 'EXC', description: 'Déblai' }] });
+  Codes.applyReference(kept);
+  assert.strictEqual(Codes.arpenteur('7').nom, 'Test');
+  assert.strictEqual(Codes.nat().length, 1);
+  Codes.applyReference(null);
+  assert.ok(Codes.nat().length >= 40 && Codes.arpenteurs().length === 0);
+  assert.throws(() => Codes.loadReference({ autre: 1 }), /reference\.json/);
+});
+
+test('NDA-001 V03 : exemples officiels (605957001, 260804LOT41UTI63), plages NNN, SS 00, secteur par défaut', () => {
+  assert.strictEqual(Codes.pointPrefix(new Date(2026, 1, 28), '57') + '001', '605957001');   // 10.3
+  assert.ok(Codes.validateLeve('260804LOT41UTI63').ok);                                      // 10.2
+  assert.ok(Codes.validateLeve('260804LOT41UTI00').errors.some((e) => /00/.test(e)));       // section 9 : 01 à 99
+  const pre = '630657', jour = ['630657001', '630657002', '630657200'];
+  assert.strictEqual(Codes.nextPointNumber(pre, jour, Codes.pointRange('1')), '630657003'); // levé : 001 à 199
+  assert.strictEqual(Codes.nextPointNumber(pre, jour, Codes.pointRange('2')), '630657201'); // implantation : 200 à 400
+  assert.strictEqual(Codes.nextPointNumber(pre, ['630657001'], Codes.pointRange('2')), '630657200');
+  assert.strictEqual(Codes.nextPointNumber(pre, ['630657199'], Codes.pointRange('1')), '630657200'); // plage pleine
+  assert.strictEqual(Codes.defaultSector('AN-26-005'), 'A005');                              // 5.3
+  assert.strictEqual(Codes.defaultSector('MA-26-552'), 'M552');
+  assert.strictEqual(Codes.defaultSector('MA-26-0495'), 'M495');
+  assert.strictEqual(Codes.defaultSector('CANP'), null);
+  const nat = Codes.nat().map((n) => n.code);                                                // section 8
+  assert.ok(!nat.includes('TQC') && !nat.includes('TEX') && ['SIG', 'MON', 'DEC', 'ROC', 'GRF', 'GRS'].every((c) => nat.includes(c)));
 });
 
 console.log(`\n${passed} tests réussis`);

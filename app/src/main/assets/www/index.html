@@ -44,6 +44,19 @@ h1 { margin: 0; font-size: 20px; font-weight: 700; flex: 1; }
 .statusbar { display: grid; grid-template-columns: auto 1fr 1fr 1fr 1fr; gap: 8px; align-items: center; padding: 10px 0; }
 .kv.far b { color: var(--warn); }
 .fix.old { background: var(--warn-soft); color: var(--warn); }
+.codelist { margin-top: 4px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; display: none; }
+.codelist.on { display: block; }
+.codelist button { display: grid; grid-template-columns: 64px 52px 1fr; gap: 8px; width: 100%; text-align: left; padding: 9px 10px; border: 0;
+  border-top: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 15px; cursor: pointer; }
+.codelist button:first-child { border-top: 0; }
+.codelist .c { font-weight: 700; font-variant-numeric: tabular-nums; }
+.codelist .a { color: var(--primary); font-weight: 700; }
+.codelist .d small { display: block; color: var(--muted); font-size: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 6px 11px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.chip.sel { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+.codesel { margin-top: 6px; font-size: 14px; }
+.codesel b { color: var(--primary); }
 .fix { font-family: 'Barlow Semi Condensed', sans-serif; font-weight: 700; padding: 6px 12px; border-radius: 999px; font-size: 15px; white-space: nowrap;
   background: var(--bad-soft); color: var(--bad); }
 .fix.q4 { background: var(--ok-soft); color: var(--ok); }
@@ -152,7 +165,17 @@ details summary { cursor: pointer; font-weight: 600; }
             <button class="btn" id="btnToday" title="Inscrire la date du jour (AAMMJJ)">Date du jour</button>
           </div>
           <p class="hint">Format AAMMJJSECT#NATSS (NDA-001) : le gabarit reste affiché en gris pendant la saisie.</p>
+          <div class="msg" id="leveMsg" style="display:none"></div>
         </div>
+        <details class="full"><summary>Composer le nom du levé</summary>
+          <div class="grid" style="margin-top:8px">
+            <label>Secteur (SECT, 4 car.)<input id="jSect" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="A005 ou AN-26-005"></label>
+            <label>Type de levé (#)<select id="jType"></select></label>
+            <label class="full">Nature (NAT)<select id="jNat"></select></label>
+          </div>
+          <div class="row"><button class="btn primary" id="btnCompose">Composer avec la date du jour</button></div>
+          <p class="hint">Secteur : WBS (préfixe client/projet + secteur), sinon secteur du chef arpenteur, sinon 1re lettre + 3 derniers chiffres du contrat (AN-26-005 → A005).</p>
+        </details>
         <label class="full">Système de coordonnées planes
           <select id="jHz"></select>
         </label>
@@ -167,6 +190,34 @@ details summary { cursor: pointer; font-weight: 600; }
       </div>
       <p class="hint" id="jSepHint">Altitude = hauteur ellipsoïdale − N. Valeur à prendre d'un point connu du chantier (ex. Emlid Flow : hauteur ellipsoïdale − altitude). Valable pour un chantier de quelques centaines de mètres.</p>
       <div class="msg" id="jobMsg"></div>
+    </div>
+
+    <div class="card">
+      <h2>Arpenteur et numérotation</h2>
+      <div class="grid">
+        <label>Votre code d’arpenteur (SS)<input id="jSS" maxlength="2" inputmode="numeric" autocomplete="off" placeholder="ex. 12"></label>
+        <label id="jSSNameWrap">Nom<input id="jSSName" disabled></label>
+        <label class="full">Numéros de points
+          <select id="jNum">
+            <option value="an">Arpent-Nord : AJJJSS001 (NDA-001, 10.3)</option>
+            <option value="libre">Libre : le dernier nom + 1</option>
+          </select>
+        </label>
+        <label id="jAWrap" style="display:none">Chiffre A de l’année<input id="jA" maxlength="1" inputmode="numeric"></label>
+      </div>
+      <p class="hint" id="jNumHint"></p>
+    </div>
+
+    <div class="card">
+      <h2>Fichier de référence</h2>
+      <p class="hint" style="margin-top:0">reference.json (Administration de la boîte à outils, dossier 01_TRAITEMENT/_SYSTEME) : codes d’arpenteurs et table des natures à jour.
+        Il reste sur cet appareil. Sans lui, l’application utilise la copie publique des natures et des codes de points.</p>
+      <div class="row">
+        <label class="btn" for="refFile" style="display:inline-block;color:var(--ink)">Charger reference.json</label>
+        <input type="file" id="refFile" style="display:none">
+        <button class="btn danger" id="btnRefClear">Retirer</button>
+      </div>
+      <div class="msg" id="refMsg"></div>
     </div>
   </section>
 
@@ -293,8 +344,31 @@ details summary { cursor: pointer; font-weight: 600; }
       <h2>Point</h2>
       <p class="jobline" id="jobLine"></p>
       <div class="grid">
-        <label>Point<input id="mNom" value="1" autocomplete="off"></label>
-        <label>Code<input id="mCode" autocomplete="off"></label>
+        <label class="full">Point
+          <div class="inline" style="margin-top:4px">
+            <input id="mNom" value="1" autocomplete="off" style="margin-top:0">
+            <button class="btn" id="btnAutoName" title="Prochain numéro libre">Prochain</button>
+          </div>
+        </label>
+        <div class="full">
+          <label>Code (Pcode)<input id="codeQ" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Chercher : numéro, abréviation ou mot (526, GAR, garde)"></label>
+          <div class="codelist" id="codeList"></div>
+          <div class="codesel" id="codeSel"></div>
+          <div class="chips" id="codeRecent"></div>
+        </div>
+        <label>Ligne (string)
+          <div class="inline" style="margin-top:4px">
+            <input id="mStr" inputmode="numeric" autocomplete="off" style="margin-top:0">
+            <button class="btn" id="btnNewStr" title="Nouvelle ligne : numéro suivant et début de ligne (.1)">Nouvelle</button>
+          </div>
+        </label>
+        <label>Contrôle<select id="mCtl"></select></label>
+        <label class="full">Description du point (Pcode String.Contrôle)<input id="mCode" autocomplete="off" spellcheck="false"></label>
+        <details class="full"><summary>Liaisons et calculs</summary>
+          <div class="chips" id="cmdChips"></div>
+          <p class="hint">Touchez une commande pour l’ajouter à la description (ex. 526 1_2P). À inscrire sur chacun des points concernés, dans l’ordre du levé.</p>
+        </details>
+        <p class="hint full" id="codeHint" style="margin:0"></p>
         <label>Hauteur de canne (m)<input id="mPole" inputmode="decimal" value="2.000"></label>
         <label>Décalage vertical récepteur (m)<input id="mApc" inputmode="decimal" value="0.000"></label>
         <label class="full">Note<input id="mNote" autocomplete="off"></label>
@@ -358,6 +432,8 @@ details summary { cursor: pointer; font-weight: 600; }
 <script src="js/survey.js"></script>
 <script src="js/proj.js"></script>
 <script src="js/ntrip.js"></script>
+<script src="js/codes-data.js"></script>
+<script src="js/codes.js"></script>
 <script src="grids/ht2_2010v70.js"></script>
 <script src="grids/ht2_2002v70.js"></script>
 <script src="grids/na83scrs.js"></script>

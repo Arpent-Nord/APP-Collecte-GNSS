@@ -8,7 +8,7 @@
   var Native = window.GnssNative || null;
   // La position (GGA) part vers le serveur NTRIP depuis le service natif (écran éteint compris).
   var NATIVE_GGA = !!(Native && Native.nativeGga && Native.nativeGga());
-  var STORE_SETTINGS = 'cg.settings.v1', STORE_POINTS = 'cg.points.v1';
+  var STORE_SETTINGS = 'cg.settings.v1', STORE_POINTS = 'cg.points.v1', STORE_REF = 'cg.reference.v1';
 
   // ---------- Stockage local (sur l'appareil seulement) ----------
   function load(key, def) { try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch (e) { return def; } }
@@ -18,7 +18,7 @@
   var points = load(STORE_POINTS, []);
 
   var FIELDS = ['selDriver', 'nHost', 'nPort', 'nUser', 'nPass', 'nMount', 'nGga', 'nAgent', 'bScreen', 'kSrc', 'kAgeMax', 'kBaseName', 'kBaseE', 'kBaseN', 'kBaseZ',
-    'mLeve', 'mNom', 'mCode', 'mPole', 'cDur', 'cMin', 'cSH', 'cSV', 'cFix', 'jHz', 'jVt', 'jSep', 'jBaseMax'];
+    'mLeve', 'mNom', 'mCode', 'mStr', 'jSS', 'jNum', 'jA', 'jSect', 'jType', 'jNat', 'mPole', 'cDur', 'cMin', 'cSH', 'cSV', 'cFix', 'jHz', 'jVt', 'jSep', 'jBaseMax'];
   var LEVE_TEMPLATE = 'AAMMJJSECT#NATSS';
   function restoreFields() {
     FIELDS.forEach(function (id) {
@@ -365,6 +365,7 @@
     var r = state.pending; if (!r || !r.n) return;
     var p = {
       leve: $('mLeve').value.trim(), nom: $('mNom').value.trim(), code: $('mCode').value.trim(), note: $('mNote').value.trim(),
+      codeDesc: codeDescription($('mCode').value),
       est: r.est, nord: r.nord, alt: r.alt, systeme: r.systeme, systemeAlti: r.systemeAlti, sep: r.sep,
       baseKm: r.baseKm, baseId: r.baseId, corrSrc: r.corrSrc, ageMax: r.ageMax,
       lat: r.lat, lon: r.lon, hEll: r.hEll, sigmaH: r.sigmaH, sigmaV: r.sigmaV, n: r.n, rejected: r.rejected,
@@ -372,7 +373,10 @@
       pole: r.pole, apc: r.apc, recepteur: state.driver ? state.driver.label : '', start: r.start, end: r.end
     };
     points.push(p); save(STORE_POINTS, points);
-    $('mNom').value = Survey.nextPointName(p.nom); $('mNote').value = '';
+    rememberCode(Codes.parseDesc(p.code).base);
+    afterPointCode();
+    $('mNom').value = settings.jNum === 'libre' ? Survey.nextPointName(p.nom) : (autoPointName() || Survey.nextPointName(p.nom));
+    $('mNote').value = '';
     persistFields();
     state.pending = null; state.recorder = null;
     $('result').style.display = 'none'; $('prog').style.width = '0%';
@@ -493,6 +497,182 @@
   function updateGhost() {
     var v = $('mLeve').value;
     $('leveGhost').innerHTML = '<span class="typed">' + esc(v) + '</span>' + esc(LEVE_TEMPLATE.slice(v.length));
+    var m = $('leveMsg');
+    if (!v.trim()) { m.style.display = 'none'; return; }
+    var r = Codes.validateLeve(v, ssValue());
+    m.style.display = '';
+    if (r.ok) {
+      var nat = Codes.nat().filter(function (n) { return n.code === r.parts.nat; })[0], ty = Codes.types().filter(function (t) { return t.code === r.parts.type; })[0];
+      m.className = 'msg ok'; m.textContent = 'Nom conforme : ' + (ty ? ty.description : '') + ' · ' + (nat ? nat.description : '') + ' · secteur ' + r.parts.sect + '.';
+    } else if (v.trim().length < 16) {
+      m.className = 'msg'; m.textContent = 'En cours de saisie (' + v.trim().length + ' / 16).';
+    } else { m.className = 'msg warn'; m.textContent = r.errors.join(' · ') + '. Le levé serait « À vérifier » au dépôt.'; }
+  }
+
+  // ---------- Nomenclature : arpenteur, nom du levé, numéros de points ----------
+  function ssValue() { var v = $('jSS').value.trim(); return /^\d{1,2}$/.test(v) && +v > 0 ? ('0' + v).slice(-2) : ''; }
+  /* Type de levé (#) lu dans le nom du levé, s'il est conforme. */
+  function leveType() { var r = Codes.validateLeve($('mLeve').value); return r.parts ? r.parts.type : ''; }
+  function fillNomenclature() {
+    var t = $('jType'), n = $('jNat'), tv = t.value || settings.jType, nv = n.value || settings.jNat;
+    t.innerHTML = ''; n.innerHTML = '';
+    Codes.types().forEach(function (x) { addOpt(t, x.code, x.code + ' – ' + x.description); });
+    addOpt(n, '', '— Choisir —');
+    Codes.nat().forEach(function (x) { addOpt(n, x.code, x.code + ' – ' + x.description); });
+    if (tv) t.value = tv;
+    if (nv && Codes.nat().some(function (x) { return x.code === nv; })) n.value = nv;
+  }
+  function renderSS() {
+    var ss = ssValue(), a = ss ? Codes.arpenteur(ss) : null;
+    $('jSSNameWrap').style.display = Codes.arpenteurs().length ? '' : 'none';
+    $('jSSName').value = a ? a.nom + (a.actif ? '' : ' (inactif)') : (ss && Codes.arpenteurs().length ? 'Code absent de reference.json' : '');
+    var yr0 = new Date().getFullYear() % 10 === 0;
+    $('jAWrap').style.display = yr0 && $('jNum').value === 'an' ? '' : 'none';
+    var h = $('jNumHint');
+    if ($('jNum').value === 'libre') h.textContent = 'Le nom suivant reprend le dernier en augmentant son numéro (P9 → P10).';
+    else if (!ss) h.textContent = 'Inscrire votre code d\u2019arpenteur (SS) pour numéroter les points AJJJSS001.';
+    else h.textContent = 'Aujourd\u2019hui : ' + Codes.pointPrefix(new Date(), ss, yr0 ? $('jA').value : null) + '001, ' +
+      'A = dernier chiffre de l\u2019année, JJJ = jour de l\u2019année, SS = votre code, NNN = 001 à 199 en levé, 200 à 400 en implantation (type 2)' + (yr0 ? ' ; année en 0 : A = dernier chiffre de l\u2019année avant le début du contrat' : '') + '.';
+  }
+  /* Prochain numéro AJJJSS### libre (tous les points de l'appareil), ou null si non applicable. */
+  function autoPointName() {
+    var ss = ssValue(); if ($('jNum').value !== 'an' || !ss) return null;
+    var yr0 = new Date().getFullYear() % 10 === 0;
+    if (yr0 && !/^\d$/.test($('jA').value)) return null;
+    var prefix = Codes.pointPrefix(new Date(), ss, yr0 ? $('jA').value : null);
+    return Codes.nextPointNumber(prefix, points.map(function (p) { return p.nom; }), Codes.pointRange(leveType()));
+  }
+  /* Nomenclature AN : remplace un nom par défaut, ou d'un autre jour / autre code, par le prochain numéro du jour. */
+  function refreshAutoName() {
+    if ($('jNum').value !== 'an') return;
+    var auto = autoPointName(), cur = $('mNom').value.trim();
+    if (auto && (!cur || /^\d{1,3}$/.test(cur) || (/^\d{9}$/.test(cur) && cur.slice(0, 6) !== auto.slice(0, 6)))) { $('mNom').value = auto; persistFields(); }
+  }
+  function composeLeve() {
+    var ss = ssValue(), sect = $('jSect').value.trim().toUpperCase();
+    if (!ss) { alertLeve('Inscrire votre code d\u2019arpenteur (SS) dans « Arpenteur et numérotation ».'); return; }
+    if (!/^[A-Z0-9]{4}$/.test(sect)) { alertLeve('Le secteur compte 4 caractères (lettres ou chiffres).'); return; }
+    if (!$('jNat').value) { alertLeve('Choisir la nature (NAT).'); return; }
+    $('mLeve').value = Codes.leveName({ date: new Date(), sect: sect, type: $('jType').value, nat: $('jNat').value, ss: ss });
+    persistFields(); updateGhost(); updateJobUi();
+  }
+  function alertLeve(t) { var m = $('leveMsg'); m.style.display = ''; m.className = 'msg warn'; m.textContent = t; }
+
+  // ---------- Fichier de référence (reference.json, gardé sur l'appareil) ----------
+  function renderRef() {
+    var m = $('refMsg'), v = Codes.refVersion();
+    $('btnRefClear').style.display = v !== null ? '' : 'none';
+    if (v === null) { m.className = 'msg'; m.textContent = 'Aucun fichier chargé : natures de la copie publique (' + Codes.nat().length + '), ' + Codes.count() + ' codes de points.'; return; }
+    m.className = 'msg ok';
+    m.textContent = 'reference.json' + (v ? ' du ' + v : '') + ' : ' + Codes.arpenteurs().length + ' code(s) d\u2019arpenteur, ' + Codes.nat().length + ' nature(s).';
+  }
+  function loadRefFile(file) {
+    var fr = new FileReader();
+    fr.onload = function () {
+      try {
+        var kept = Codes.loadReference(JSON.parse(String(fr.result).replace(/^\uFEFF/, '')));
+        save(STORE_REF, kept); Codes.applyReference(kept);
+        fillNomenclature(); renderSS(); renderRef(); updateGhost();
+      } catch (e) { $('refMsg').className = 'msg bad'; $('refMsg').textContent = 'Fichier refusé : ' + e.message + '.'; }
+    };
+    fr.onerror = function () { $('refMsg').className = 'msg bad'; $('refMsg').textContent = 'Lecture impossible.'; };
+    fr.readAsText(file);
+  }
+
+  // ---------- Codes de points (Pcodes) ----------
+  var codeBase = '';
+  function codeDescription(desc) { var c = Codes.byCode(Codes.parseDesc(desc).base); return c ? c.description : ''; }
+  function fillControls() {
+    var sel = $('mCtl'); sel.innerHTML = '';
+    Codes.CONTROLS.forEach(function (c) { addOpt(sel, c.v, c.label); });
+    var box = $('cmdChips'); box.innerHTML = '';
+    Codes.commands().forEach(function (c) {
+      var b = document.createElement('button'); b.className = 'chip'; b.type = 'button'; b.textContent = c.code; b.title = c.description;
+      b.addEventListener('click', function () { $('mCode').value = $('mCode').value.trim() + '_' + c.code; onDescEdit(); });
+      box.appendChild(b);
+    });
+    var u = document.createElement('button'); u.className = 'chip'; u.type = 'button'; u.textContent = '_ liaison';
+    u.title = 'Liaison multiple : 526 1.2_2.1 ferme le string 1 et débute le string 2';
+    u.addEventListener('click', function () { $('mCode').value = $('mCode').value.trim() + '_'; $('mCode').focus(); });
+    box.appendChild(u);
+  }
+  function renderCodeList() {
+    var q = $('codeQ').value, list = Codes.search(q, 8), box = $('codeList');
+    box.innerHTML = '';
+    list.forEach(function (c) {
+      var b = document.createElement('button'); b.type = 'button';
+      b.innerHTML = '<span class="c">' + esc(c.code) + '</span><span class="a">' + esc(c.aph) + '</span><span class="d">' + esc(c.description) + '<small>' + esc(c.categorie) + '</small></span>';
+      b.addEventListener('click', function () { pickCode(c.code); });
+      box.appendChild(b);
+    });
+    box.classList.toggle('on', list.length > 0 && q.trim().length > 0);
+  }
+  function pickCode(code) {
+    if (code !== codeBase) { $('mStr').value = nextString(code); $('mCtl').value = '.1'; }
+    codeBase = code;
+    $('codeQ').value = ''; $('codeList').classList.remove('on');
+    buildDesc(); renderCodeSel();
+  }
+  /* Prochain numéro de ligne libre pour ce code, dans le levé courant. */
+  function nextString(code) {
+    var leve = $('mLeve').value.trim(), max = 0;
+    points.forEach(function (p) {
+      if (p.leve !== leve) return;
+      String(p.code || '').split('_').forEach(function (part, i) {
+        var d = Codes.parseDesc(i ? (/^\d+(\.\d)?$/.test(part.trim()) ? Codes.parseDesc(p.code).base + ' ' + part : part) : part);
+        if (d.base === code && d.str) max = Math.max(max, +d.str);
+      });
+    });
+    return String(max + 1);
+  }
+  function buildDesc() {
+    var extra = Codes.parseDesc($('mCode').value).extra;
+    $('mCode').value = Codes.compose(codeBase, $('mStr').value, $('mCtl').value, extra);
+    persistFields(); renderCodeHint();
+  }
+  function onDescEdit() {
+    var d = Codes.parseDesc($('mCode').value);
+    codeBase = d.base; $('mStr').value = d.str; $('mCtl').value = d.ctl;
+    persistFields(); renderCodeSel(); renderCodeHint();
+  }
+  function renderCodeSel() {
+    var c = codeBase ? Codes.byCode(codeBase) : null;
+    $('codeSel').innerHTML = !codeBase ? '<span class="hint">Aucun code choisi.</span>'
+      : c ? 'Code <b>' + esc(c.code) + (c.aph ? ' ' + esc(c.aph) : '') + '</b> · ' + esc(c.description) + ' <span class="hint">(' + esc(c.categorie) + ')</span>'
+        : '<span style="color:var(--warn)">Code « ' + esc(codeBase) + ' » absent de la liste des Pcodes.</span>';
+    var rec = $('codeRecent'); rec.innerHTML = '';
+    (settings.recentCodes || []).forEach(function (code) {
+      var k = Codes.byCode(code); if (!k) return;
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip' + (code === codeBase ? ' sel' : '');
+      b.textContent = code + (k.aph ? ' ' + k.aph : ''); b.title = k.description;
+      b.addEventListener('click', function () { pickCode(code); });
+      rec.appendChild(b);
+    });
+  }
+  function renderCodeHint() {
+    var d = Codes.parseDesc($('mCode').value), h = $('codeHint');
+    var ctl = Codes.CONTROLS.filter(function (c) { return c.v === d.ctl; })[0];
+    h.textContent = !d.base ? 'Description : Pcode String.Contrôle, ex. 526 1.1 (code 526, ligne 1, début de ligne).'
+      : 'Ce point : code ' + d.base + (d.str ? ', ligne ' + d.str : ', sans ligne') + (d.ctl && ctl ? ', ' + ctl.label.replace(/^\.\d /, '').toLowerCase() : '') + (d.extra ? ', ' + d.extra : '') + '.';
+  }
+  function rememberCode(code) {
+    if (!code || !Codes.byCode(code)) return;
+    var r = (settings.recentCodes || []).filter(function (c) { return c !== code; });
+    r.unshift(code); settings.recentCodes = r.slice(0, 8); save(STORE_SETTINGS, settings);
+  }
+  /* Après un point : le contrôle ne vaut que pour ce point ; une forme fermée (.2) prépare la ligne suivante. */
+  function afterPointCode() {
+    var d = Codes.parseDesc($('mCode').value);
+    codeBase = d.base;
+    if (d.extra) { $('mCode').value = Codes.compose(d.base, d.str, '', ''); onDescEdit(); return; }
+    if (d.ctl === '.2') { $('mStr').value = String((+d.str || 0) + 1); $('mCtl').value = '.1'; }
+    else $('mCtl').value = '';
+    buildDesc(); renderCodeSel();
+  }
+  function newString() {
+    if (!codeBase) { $('codeQ').focus(); return; }
+    var n = Math.max(+nextString(codeBase), (+$('mStr').value || 0) + 1);
+    $('mStr').value = String(n); $('mCtl').value = '.1'; buildDesc();
   }
   function today() {
     var d = new Date();
@@ -641,6 +821,30 @@
   document.querySelectorAll('input').forEach(function (el) { el.addEventListener('change', persistFields); });
   $('nGga').addEventListener('change', function () { if (Native && Native.ntripGgaEnabled) Native.ntripGgaEnabled(this.checked); });
   $('bScreen').addEventListener('change', applyScreen);
+  $('codeQ').addEventListener('input', renderCodeList);
+  $('codeQ').addEventListener('keydown', function (e) { if (e.key === 'Enter') { var r = Codes.search(this.value, 1); if (r.length) pickCode(r[0].code); } });
+  $('mStr').addEventListener('input', buildDesc);
+  $('mCtl').addEventListener('change', buildDesc);
+  $('mCode').addEventListener('input', onDescEdit);
+  $('btnNewStr').addEventListener('click', newString);
+  $('btnAutoName').addEventListener('click', function () {
+    var n = settings.jNum === 'libre' ? null : autoPointName();
+    if (n) { $('mNom').value = n; persistFields(); } else if ($('jNum').value === 'an') alertMsg('Inscrire votre code d\u2019arpenteur (SS) dans l\u2019onglet Travail.');
+  });
+  $('btnCompose').addEventListener('click', composeLeve);
+  $('jSect').addEventListener('change', function () {
+    // Un numéro de contrat donne le secteur par défaut : AN-26-005 -> A005, MA-26-0495 -> M495.
+    var d = Codes.defaultSector(this.value);
+    this.value = d || this.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+    persistFields();
+  });
+  ['jSS', 'jNum', 'jA'].forEach(function (id) { $(id).addEventListener('change', function () { persistFields(); renderSS(); updateGhost(); refreshAutoName(); }); });
+  $('refFile').addEventListener('change', function () { if (this.files && this.files[0]) loadRefFile(this.files[0]); this.value = ''; });
+  $('btnRefClear').addEventListener('click', function () {
+    if (!confirm('Retirer reference.json de cet appareil ?')) return;
+    try { localStorage.removeItem(STORE_REF); } catch (e) { /* rien */ }
+    Codes.applyReference(null); fillNomenclature(); renderSS(); renderRef(); updateGhost();
+  });
   $('kSrc').addEventListener('change', function () { persistFields(); applySrc(); });
   $('kBasePt').addEventListener('change', takeBasePoint);
   ['kBaseE', 'kBaseN', 'kBaseZ', 'jHz', 'jVt'].forEach(function (id) { $(id).addEventListener('change', renderRadio); });
@@ -649,6 +853,10 @@
 
   fillDrivers();
   fillSystems();
+  var storedRef = load(STORE_REF, null);
+  if (storedRef) Codes.applyReference(storedRef);
+  fillNomenclature();
+  fillControls();
   if (!settings.jHz) settings.jHz = '2949';
   if (!settings.jVt || settings.jVt === '10588-grille') settings.jVt = '10588-2010';
   restoreFields();
@@ -663,6 +871,10 @@
   applyScreen();
   renderBackground();
   applySrc();
+  onDescEdit();
+  renderSS();
+  renderRef();
+  refreshAutoName();
   // Le service de collecte a pu rester relié pendant que l'interface était fermée : on reprend son état.
   if (Native && Native.syncState) {
     var addr = Native.syncState();
