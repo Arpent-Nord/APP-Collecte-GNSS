@@ -20,23 +20,21 @@ import java.util.Set;
  * Pont entre l'interface web (JavaScript) et Android.
  * JS -> Android : méthodes @JavascriptInterface de window.GnssNative.
  * Android -> JS : window.GnssApp.onNative({t: ...}).
+ *
+ * Le lien Bluetooth et le client NTRIP vivent dans GnssService (service au premier plan),
+ * pour continuer quand l'écran est éteint. Le pont relaie seulement les commandes et les événements.
  */
 @SuppressLint("MissingPermission")
-public class GnssBridge implements BluetoothLink.Listener, NtripClient.Listener, RtcmScanner.Listener {
+public class GnssBridge implements GnssService.Sink {
 
     private final MainActivity activity;
     private final WebView web;
-    private final BluetoothLink link;
-    private final NtripClient ntrip;
-    private final RtcmScanner rtcm = new RtcmScanner(this);
-    private long lastStationAt;
-    private double lastX, lastY, lastZ;
+    private volatile boolean attached = true;
 
     public GnssBridge(MainActivity activity, WebView web) {
         this.activity = activity;
         this.web = web;
-        this.link = new BluetoothLink(this);
-        this.ntrip = new NtripClient(this);
+        GnssService.setSink(this);
     }
 
     // ------------------------------------------------------------------ JS -> Android
@@ -73,22 +71,55 @@ public class GnssBridge implements BluetoothLink.Listener, NtripClient.Listener,
     public void connect(String address) {
         if (!activity.hasBluetoothPermission()) {
             activity.runOnUiThread(activity::requestBluetoothPermission);
-            onState("error", "Autorisation Bluetooth requise");
+            onBt("error", "Autorisation Bluetooth requise");
             return;
         }
-        link.connect(address);
+        activity.runOnUiThread(() -> {
+            try {
+                GnssService.startAndConnect(activity, address);
+            } catch (Exception e) {
+                onBt("error", "Service de collecte impossible à démarrer : " + e.getMessage());
+            }
+        });
     }
 
     @JavascriptInterface
     public void disconnect() {
-        ntrip.stop();
-        link.disconnect();
-        onState("disconnected", "Déconnecté.");
+        GnssService s = GnssService.get();
+        if (s != null) s.disconnect();
+        else onBt("disconnected", "Déconnecté.");
+    }
+
+    /** Rejoue l'état du service (appelé au chargement de la page). Retourne l'adresse du récepteur relié, ou "". */
+    @JavascriptInterface
+    public String syncState() {
+        GnssService s = GnssService.get();
+        if (s == null) return "";
+        s.syncState();
+        String a = s.deviceAddress();
+        return a == null ? "" : a;
+    }
+
+    /** Vrai : la position (GGA) est envoyée au serveur NTRIP par le service natif. */
+    @JavascriptInterface
+    public boolean nativeGga() {
+        return true;
+    }
+
+    @JavascriptInterface
+    public void ntripGgaEnabled(boolean on) {
+        GnssService s = GnssService.get();
+        if (s != null) s.setGgaToCaster(on);
     }
 
     @JavascriptInterface
     public void ntripStart(String host, int port, String mount, String user, String pass) {
-        ntrip.start(host, port, mount, user, pass);
+        GnssService s = GnssService.get();
+        if (s == null) {
+            onNtrip("stopped", "Connecter d'abord le récepteur.", 0);
+            return;
+        }
+        s.ntripStart(host, port, mount, user, pass);
     }
 
     @JavascriptInterface
@@ -98,12 +129,14 @@ public class GnssBridge implements BluetoothLink.Listener, NtripClient.Listener,
 
     @JavascriptInterface
     public void ntripStop() {
-        ntrip.stop();
+        GnssService s = GnssService.get();
+        if (s != null) s.ntripStop();
     }
 
     @JavascriptInterface
     public void ntripGga(String gga) {
-        ntrip.sendGga(gga);
+        GnssService s = GnssService.get();
+        if (s != null) s.ntripGga(gga);
     }
 
     @JavascriptInterface
@@ -146,10 +179,28 @@ public class GnssBridge implements BluetoothLink.Listener, NtripClient.Listener,
         });
     }
 
-    // ------------------------------------------------------------------ Android -> JS
+    /** Garder l'écran allumé pendant que l'application est affichée. */
+    @JavascriptInterface
+    public void keepScreenOn(boolean on) {
+        activity.runOnUiThread(() -> activity.setKeepScreenOn(on));
+    }
+
+    /** Vrai si Android peut limiter l'application quand l'écran est éteint (optimisation de la batterie active). */
+    @JavascriptInterface
+    public boolean batteryRestricted() {
+        return activity.batteryRestricted();
+    }
+
+    /** Ouvre la demande Android pour exclure l'application de l'optimisation de la batterie. */
+    @JavascriptInterface
+    public void requestBatteryExemption() {
+        activity.runOnUiThread(activity::requestBatteryExemption);
+    }
+
+    // ------------------------------------------------------------------ Android -> JS (GnssService.Sink)
 
     @Override
-    public void onState(String state, String msg) {
+    public void onBt(String state, String msg) {
         JSONObject ev = new JSONObject();
         try {
             ev.put("t", "bt");
@@ -158,7 +209,6 @@ public class GnssBridge implements BluetoothLink.Listener, NtripClient.Listener,
         } catch (JSONException ignored) {
         }
         emit(ev);
-        if ("disconnected".equals(state) || "error".equals(state)) ntrip.stop();
     }
 
     @Override
@@ -173,7 +223,7 @@ public class GnssBridge implements BluetoothLink.Listener, NtripClient.Listener,
     }
 
     @Override
-    public void onState(String state, String msg, long bytes) {
+    public void onNtrip(String state, String msg, long bytes) {
         JSONObject ev = new JSONObject();
         try {
             ev.put("t", "ntrip");
@@ -186,17 +236,7 @@ public class GnssBridge implements BluetoothLink.Listener, NtripClient.Listener,
     }
 
     @Override
-    public void onCorrections(byte[] data, int off, int len) {
-        link.write(data, off, len);
-        rtcm.push(data, off, len); // lecture de la position de la base (messages 1005/1006)
-    }
-
-    @Override
     public void onStation(int id, double x, double y, double z) {
-        long now = System.currentTimeMillis();
-        boolean moved = Math.abs(x - lastX) + Math.abs(y - lastY) + Math.abs(z - lastZ) > 1.0;
-        if (!moved && now - lastStationAt < 30000) return;
-        lastStationAt = now; lastX = x; lastY = y; lastZ = z;
         JSONObject ev = new JSONObject();
         try {
             ev.put("t", "base");
@@ -221,12 +261,14 @@ public class GnssBridge implements BluetoothLink.Listener, NtripClient.Listener,
     }
 
     private void emit(JSONObject ev) {
+        if (!attached) return;
         final String js = "window.GnssApp && window.GnssApp.onNative(" + ev.toString() + ")";
-        web.post(() -> web.evaluateJavascript(js, null));
+        web.post(() -> { if (attached) web.evaluateJavascript(js, null); });
     }
 
-    public void shutdown() {
-        ntrip.stop();
-        link.disconnect();
+    /** L'activité se termine : on détache l'interface, le service continue (s'il est actif). */
+    public void detach() {
+        attached = false;
+        GnssService.setSinkIf(this, null);
     }
 }

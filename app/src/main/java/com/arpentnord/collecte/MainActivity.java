@@ -8,6 +8,8 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.view.WindowManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -22,6 +24,7 @@ public class MainActivity extends Activity {
 
     private static final int REQ_BT = 1;
     private static final int REQ_SAVE = 2;
+    private static final int REQ_NOTIF = 3;
 
     private WebView web;
     private GnssBridge bridge;
@@ -48,6 +51,7 @@ public class MainActivity extends Activity {
         web.loadUrl("file:///android_asset/www/index.html");
 
         if (!hasBluetoothPermission()) requestBluetoothPermission();
+        else requestNotificationPermission();
     }
 
     // ------------------------------------------------------------------ Autorisations
@@ -58,8 +62,44 @@ public class MainActivity extends Activity {
     }
 
     public void requestBluetoothPermission() {
-        if (Build.VERSION.SDK_INT >= 31) {
+        if (Build.VERSION.SDK_INT >= 33) {
+            // La notification du service de collecte est requise pour travailler écran éteint.
+            requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.POST_NOTIFICATIONS}, REQ_BT);
+        } else if (Build.VERSION.SDK_INT >= 31) {
             requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, REQ_BT);
+        }
+    }
+
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF);
+        }
+    }
+
+    // ------------------------------------------------------------------ Écran et batterie
+
+    public void setKeepScreenOn(boolean on) {
+        if (on) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    }
+
+    /** Vrai si l'optimisation de la batterie s'applique encore à l'application. */
+    public boolean batteryRestricted() {
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        return pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName());
+    }
+
+    @SuppressLint("BatteryLife") // application installée hors Play Store, outil de terrain
+    public void requestBatteryExemption() {
+        try {
+            startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:" + getPackageName())));
+        } catch (Exception e) {
+            try {
+                startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -119,7 +159,8 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        if (bridge != null) bridge.shutdown();
+        // Le service de collecte continue sans l'interface ; « Déconnecter » ou la notification l'arrêtent.
+        if (bridge != null) bridge.detach();
         if (web != null) web.destroy();
         super.onDestroy();
     }

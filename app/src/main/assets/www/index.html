@@ -43,6 +43,7 @@ h1 { margin: 0; font-size: 20px; font-weight: 700; flex: 1; }
 
 .statusbar { display: grid; grid-template-columns: auto 1fr 1fr 1fr 1fr; gap: 8px; align-items: center; padding: 10px 0; }
 .kv.far b { color: var(--warn); }
+.fix.old { background: var(--warn-soft); color: var(--warn); }
 .fix { font-family: 'Barlow Semi Condensed', sans-serif; font-weight: 700; padding: 6px 12px; border-radius: 999px; font-size: 15px; white-space: nowrap;
   background: var(--bad-soft); color: var(--bad); }
 .fix.q4 { background: var(--ok-soft); color: var(--ok); }
@@ -191,10 +192,18 @@ details summary { cursor: pointer; font-weight: 600; }
     </div>
 
     <div class="card">
+      <h2>Travail écran éteint</h2>
+      <label class="full check"><input type="checkbox" id="bScreen" checked>Garder l’écran allumé quand l’application est affichée</label>
+      <p class="hint">Une fois le récepteur connecté, le lien Bluetooth et les corrections NTRIP restent actifs écran éteint ou application en arrière-plan. Le bouton « Arrêter » de la notification coupe tout.</p>
+      <div class="row"><button class="btn" id="btnBattery" style="display:none">Autoriser l’arrière-plan</button></div>
+      <div class="msg" id="bgMsg"></div>
+    </div>
+
+    <div class="card">
       <h2>Position en direct</h2>
       <div class="details">
         <div class="kv">Solution<b id="dFix">—</b></div>
-        <div class="kv">Âge corr.<b id="dAge">—</b></div>
+        <div class="kv" id="dAgeKv">Âge corr.<b id="dAge">—</b></div>
         <div class="kv">HDOP<b id="dHdop">—</b></div>
         <div class="kv">Latitude<b id="dLat">—</b></div>
         <div class="kv">Longitude<b id="dLon">—</b></div>
@@ -211,7 +220,35 @@ details summary { cursor: pointer; font-weight: 600; }
     </div>
 
     <div class="card">
-      <h2>Corrections RTK (NTRIP)</h2>
+      <h2>Corrections RTK</h2>
+      <div class="grid">
+        <label class="full">Source des corrections
+          <select id="kSrc">
+            <option value="ntrip">NTRIP par la tablette (Internet)</option>
+            <option value="radio">Radio du récepteur (LoRa, UHF) ou modem interne</option>
+          </select>
+        </label>
+        <label>Alerte si l’âge des corrections dépasse (s)<input id="kAgeMax" inputmode="decimal" value="5"></label>
+      </div>
+
+      <div id="radioBox" style="display:none">
+        <p class="hint">Le récepteur reçoit les corrections directement de la base. Régler une fois son entrée de corrections sur la radio
+          (même fréquence et débit que la base) dans le logiciel du fabricant : Emlid Flow, Trimble, Leica Captivate.
+          La tablette ne relaie rien ; elle lit la position et l’âge des corrections.</p>
+        <div class="grid">
+          <label class="full">Nom de la base (inscrit dans le CSV)<input id="kBaseName" autocomplete="off" placeholder="ex. BASE1 ou numéro du repère"></label>
+          <label class="full">Prendre la position d’un point mesuré
+            <select id="kBasePt"></select>
+          </label>
+          <label>Est de la base<input id="kBaseE" inputmode="decimal"></label>
+          <label>Nord de la base<input id="kBaseN" inputmode="decimal"></label>
+          <label>Altitude de la base (facultatif)<input id="kBaseZ" inputmode="decimal"></label>
+        </div>
+        <p class="hint">Est et Nord dans le système plan du travail (onglet Travail). Sert à calculer la ligne de base ; une précision au mètre suffit.</p>
+        <div class="msg" id="radioMsg"></div>
+      </div>
+
+      <div id="ntripBox">
       <div class="grid">
         <label class="full">Profil
           <div class="inline" style="margin-top:4px">
@@ -246,6 +283,7 @@ details summary { cursor: pointer; font-weight: 600; }
       </div>
       <div class="msg" id="ntripMsg">Corrections arrêtées.</div>
       <p class="hint">Les identifiants restent sur cet appareil. Les corrections sont relayées au récepteur par le lien Bluetooth.</p>
+      </div>
     </div>
   </section>
 

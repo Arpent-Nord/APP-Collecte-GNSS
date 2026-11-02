@@ -13,9 +13,9 @@ Serveur NTRIP ──Internet──► Client NTRIP                              
                                                                CSV → SharePoint / OneDrive
 ```
 
-- **Pilotes par marque** (`www/js/drivers.js`) : Emlid RX, RX2, RS4, Trimble R8 à R12 (NMEA), NMEA générique, simulation. Ajouter un récepteur = ajouter un pilote.
+- **Pilotes par marque** (`www/js/drivers.js`) : Emlid RX, RX2, RS4, Trimble R8 à R12 (NMEA), Leica GS07/GS16/GS18 (NMEA), NMEA générique, simulation. Ajouter un récepteur = ajouter un pilote.
 - **Noyau** indépendant du récepteur : `nmea.js` (décodage), `survey.js` (moyenne, contrôle de qualité, CSV).
-- **Module natif** (Java, sans dépendance externe) : `BluetoothLink` (port série Bluetooth), `NtripClient` (corrections), `GnssBridge` (pont avec l'interface).
+- **Module natif** (Java, sans dépendance externe) : `GnssService` (service au premier plan qui porte la collecte, écran éteint compris), `BluetoothLink` (port série Bluetooth), `NtripClient` (corrections), `RtcmScanner` (position de la base), `GnssBridge` (pont avec l'interface).
 - Données (réglages, points, identifiants NTRIP) **conservées sur l'appareil seulement**. Rien de privé dans ce dépôt.
 
 ## Structure
@@ -82,15 +82,42 @@ Mesure :
 - Chaque précision (trame GST) est associée à l'époque de la même heure seulement.
 - Bouton ✕ pour annuler une mesure en cours.
 
+## Travail écran éteint
+
+Dès que le récepteur est connecté, un **service Android au premier plan** prend le relais (notification « Collecte GNSS ») :
+
+- le lien Bluetooth, la session NTRIP et le relais des corrections restent actifs écran éteint ou application en arrière-plan (verrous processeur et Wi-Fi) ;
+- la position (GGA) est envoyée au serveur NTRIP aux 10 s par le module natif, ce qui garde la VRS en vie même si l'interface dort ;
+- la notification affiche la solution (RTK fixe, flottant…), le nombre de satellites et le débit des corrections ; son bouton **Arrêter** coupe tout ;
+- si le lien Bluetooth se coupe (récepteur trop loin, redémarré), l'application **se reconnecte seule** aux 5 s pendant 15 minutes, sans fermer la session NTRIP ;
+- retirer l'application des applications récentes, ou « Déconnecter », arrête le service et libère le récepteur.
+
+Onglet Récepteur, carte « Travail écran éteint » : option « Garder l'écran allumé » et bouton **Autoriser l'arrière-plan** (exclusion de l'optimisation de la batterie, recommandée sur les tablettes Samsung).
+
+## Corrections par radio (LoRa, UHF) ou modem du récepteur
+
+Onglet Récepteur, carte « Corrections RTK », **Source des corrections** :
+
+- **NTRIP par la tablette** : la tablette reçoit les corrections par Internet et les relaie au récepteur par Bluetooth (fonctionnement habituel).
+- **Radio du récepteur** : le récepteur (ex. RS4 en LoRa, Trimble en UHF) reçoit les corrections directement de la base. Son entrée de corrections se règle une fois dans le logiciel du fabricant. La section NTRIP est masquée et ne peut pas être démarrée (pas de double source).
+  - Ligne de base : inscrire Est / Nord (et Altitude, facultative) de la base dans le système du travail, ou les prendre d'un point déjà mesuré. Le nom de la base va dans la colonne `Station_base`.
+- Pour les deux sources : **alerte d'âge des corrections** (5 s par défaut). La barre d'état passe en orange ; une mesure qui a connu un âge plus élevé est signalée.
+- CSV : deux colonnes ajoutées **à la fin** (l'ordre des autres ne change pas) : `Source_corrections`, `Age_corr_max_s`.
+
+## Leica (à valider aux essais)
+
+Pilote « Leica GS07, GS16, GS18 (NMEA) » : sortie NMEA GGA + GST sur le port Bluetooth, configurée une fois dans Captivate.
+À vérifier pour chaque modèle : option NMEA sous licence, entrée RTCM par Bluetooth (NTRIP par la tablette),
+hauteur de référence du NMEA (comparer à Captivate sur un point connu). La compensation d'inclinaison n'est pas transmise en NMEA.
+
 ## Limites connues
 
-- L'application doit rester à l'écran pendant la collecte (le fonctionnement en arrière-plan viendra plus tard).
 - Pas encore de carte (orthophoto, routes), de liste de codes, ni d'implantation.
 - Trimble : NMEA seulement. Le décodeur GSOF est prévu.
 
 ## Feuille de route
 
-1. Projections MTM et géoïde CGVD2013 (HTv2.0), codes (Pcodes), nommage `AAMMJJSECT#NATSS` à partir de `reference.json`, projets préparés au bureau, fonctionnement en arrière-plan.
+1. Calage sur repère, codes (Pcodes), nommage `AAMMJJSECT#NATSS` à partir de `reference.json`, projets préparés au bureau, carte.
 2. Validation de levé (2P/2PD/2D) et Contrôle d'implantation directement sur le terrain.
 3. Pilote Trimble GSOF, puis autres marques.
 

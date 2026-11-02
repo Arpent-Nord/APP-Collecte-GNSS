@@ -49,14 +49,19 @@
   }
 
   /* Ligne de base (km, distance 3D) entre le récepteur (lat, lon, h ellipsoïdale) et la base (ECEF, m). GRS80. */
-  function baselineKm(lat, lon, h, x, y, z) {
+  /* Géographiques (GRS80) -> cartésiennes ECEF, en mètres. */
+  function geoToEcef(lat, lon, h) {
     var A = 6378137.0, f = 1 / 298.257222101, e2 = f * (2 - f), r = Math.PI / 180;
     var sl = Math.sin(lat * r), cl = Math.cos(lat * r), N = A / Math.sqrt(1 - e2 * sl * sl);
-    var X = (N + h) * cl * Math.cos(lon * r), Y = (N + h) * cl * Math.sin(lon * r), Z = (N * (1 - e2) + h) * sl;
-    return Math.sqrt((X - x) * (X - x) + (Y - y) * (Y - y) + (Z - z) * (Z - z)) / 1000;
+    return { x: (N + h) * cl * Math.cos(lon * r), y: (N + h) * cl * Math.sin(lon * r), z: (N * (1 - e2) + h) * sl };
   }
 
-  var api = { parseStr: parseStr, mountList: mountList, distanceKm: distanceKm, baselineKm: baselineKm };
+  function baselineKm(lat, lon, h, x, y, z) {
+    var p = geoToEcef(lat, lon, h);
+    return Math.sqrt((p.x - x) * (p.x - x) + (p.y - y) * (p.y - y) + (p.z - z) * (p.z - z)) / 1000;
+  }
+
+  var api = { parseStr: parseStr, mountList: mountList, distanceKm: distanceKm, baselineKm: baselineKm, geoToEcef: geoToEcef };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.Ntrip = api;
 })(typeof window !== 'undefined' ? window : globalThis);

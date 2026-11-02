@@ -156,7 +156,9 @@
     ['lat', 'Latitude'], ['lon', 'Longitude'], ['hEll', 'H_ellipsoidale'], ['sep', 'Separation_geoide'],
     ['sigmaH', 'Precision_H'], ['sigmaV', 'Precision_V'], ['n', 'Epoques'], ['rejected', 'Epoques_rejetees'],
     ['qualityLabel', 'Solution'], ['baseKm', 'Ligne_base_km'], ['baseId', 'Station_base'], ['pole', 'Hauteur_canne'], ['apc', 'Decalage_recepteur'],
-    ['recepteur', 'Recepteur'], ['start', 'Debut_UTC'], ['end', 'Fin_UTC'], ['note', 'Note']
+    ['recepteur', 'Recepteur'], ['start', 'Debut_UTC'], ['end', 'Fin_UTC'], ['note', 'Note'],
+    // Ajoutée à la fin (0.2.12+) pour ne pas déplacer les colonnes lues par les autres outils.
+    ['corrSrc', 'Source_corrections'], ['ageMax', 'Age_corr_max_s']
   ];
 
   function fmt(key, v) {
@@ -164,7 +166,8 @@
     if (key === 'lat' || key === 'lon') return v.toFixed(9);
     if (key === 'est' || key === 'nord' || key === 'alt' || key === 'sep') return v.toFixed(3);
     if (key === 'baseKm') return v.toFixed(2);
-    if (key === 'baseId') return String(v);
+    if (key === 'baseId') v = String(v); // nom de base (radio) : peut contenir une virgule
+    if (key === 'ageMax') return v.toFixed(1);
     if (typeof v === 'number') return (key === 'n' || key === 'rejected') ? String(v) : v.toFixed(4);
     var s = String(v);
     if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';

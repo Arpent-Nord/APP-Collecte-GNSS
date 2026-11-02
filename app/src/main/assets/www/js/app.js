@@ -6,6 +6,8 @@
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var Native = window.GnssNative || null;
+  // La position (GGA) part vers le serveur NTRIP depuis le service natif (écran éteint compris).
+  var NATIVE_GGA = !!(Native && Native.nativeGga && Native.nativeGga());
   var STORE_SETTINGS = 'cg.settings.v1', STORE_POINTS = 'cg.points.v1';
 
   // ---------- Stockage local (sur l'appareil seulement) ----------
@@ -15,7 +17,7 @@
   var settings = load(STORE_SETTINGS, {});
   var points = load(STORE_POINTS, []);
 
-  var FIELDS = ['selDriver', 'nHost', 'nPort', 'nUser', 'nPass', 'nMount', 'nGga', 'nAgent',
+  var FIELDS = ['selDriver', 'nHost', 'nPort', 'nUser', 'nPass', 'nMount', 'nGga', 'nAgent', 'bScreen', 'kSrc', 'kAgeMax', 'kBaseName', 'kBaseE', 'kBaseN', 'kBaseZ',
     'mLeve', 'mNom', 'mCode', 'mPole', 'cDur', 'cMin', 'cSH', 'cSV', 'cFix', 'jHz', 'jVt', 'jSep', 'jBaseMax'];
   var LEVE_TEMPLATE = 'AAMMJJSECT#NATSS';
   function restoreFields() {
@@ -46,11 +48,12 @@
     state.gga = s; state.lastGgaAt = Date.now(); state.ggaCount++;
     logLine(s.raw);
     // Position envoyée au serveur NTRIP (réseaux VRS), aux 10 s.
-    if (Native && state.ntripOn && $('nGga').checked && s.quality > 0 && Date.now() - state.lastGgaToCaster > 10000) {
+    if (Native && !NATIVE_GGA && state.ntripOn && $('nGga').checked && s.quality > 0 && Date.now() - state.lastGgaToCaster > 10000) {
       state.lastGgaToCaster = Date.now();
       Native.ntripGga(s.raw);
     }
     if (state.recorder && !state.recorder.done) {
+      if (s.quality >= 2 && s.ageCorr !== null && s.ageCorr !== undefined) state.measAgeMax = Math.max(state.measAgeMax || 0, s.ageCorr);
       var st = state.recorder.feed(s, state.gst, Date.now());
       $('prog').style.width = (st.progress * 100).toFixed(0) + '%';
       var need = state.recorder.opts.requireFixed ? 'RTK fixe' : 'une solution';
@@ -72,7 +75,9 @@
     var fix = $('sbFix');
     if (!state.connected) { fix.className = 'fix off'; fix.textContent = 'Déconnecté'; }
     else if (!fresh) { fix.className = 'fix'; fix.textContent = 'Aucune donnée'; }
+    else if (corrTooOld(g)) { fix.className = 'fix old'; fix.textContent = g.qualityLabel + ' · corr. ' + g.ageCorr.toFixed(0) + ' s'; }
     else { fix.className = 'fix q' + g.quality; fix.textContent = g.qualityLabel; }
+    $('dAgeKv').classList.toggle('far', !!(fresh && corrTooOld(g)));
     var gs = fresh ? state.gst : null;
     var sh = gs && gs.sigmaLat !== null ? Math.sqrt(gs.sigmaLat * gs.sigmaLat + gs.sigmaLon * gs.sigmaLon) : null;
     $('sbSH').textContent = fmtCm(sh);
@@ -89,7 +94,8 @@
     $('dBad').textContent = state.decoder ? state.decoder.stats.bad : 0;
     var bk = fresh ? baseKm() : null, far = bk !== null && bk > numVal('jBaseMax', 10);
     $('sbBase').textContent = bk === null ? '—' : bk.toFixed(1) + ' km';
-    $('dBase').textContent = bk === null ? '—' : bk.toFixed(1) + ' km' + (state.base ? ' (station ' + state.base.id + ')' : '');
+    var bid = baseIdNow();
+    $('dBase').textContent = bk === null ? '—' : bk.toFixed(1) + ' km' + (bid !== null ? ' (' + (radioMode() ? '' : 'station ') + bid + ')' : '');
     $('sbBaseKv').classList.toggle('far', far); $('dBaseKv').classList.toggle('far', far);
     var c = fresh && g.hEll !== null ? Proj.convert(g.lat, g.lon, g.hEll - numVal('mPole', 0) - numVal('mApc', 0), job()) : null;
     $('dE').textContent = c && c.e !== null ? c.e.toFixed(3) : '—';
@@ -172,6 +178,19 @@
     if (Native) Native.disconnect();
   }
 
+  // ---------- Arrière-plan (écran éteint) ----------
+  function applyScreen() { if (Native && Native.keepScreenOn) Native.keepScreenOn($('bScreen').checked); }
+  function renderBackground() {
+    var restricted = !!(Native && Native.batteryRestricted && Native.batteryRestricted());
+    $('btnBattery').style.display = restricted ? '' : 'none';
+    var m = $('bgMsg');
+    if (!Native) { m.textContent = 'Disponible dans l’application Android.'; m.className = 'msg'; return; }
+    m.textContent = restricted
+      ? 'Android peut ralentir l’application écran éteint (optimisation de la batterie). Autoriser l’arrière-plan pour un lien stable.'
+      : 'Le lien au récepteur et les corrections restent actifs écran éteint (notification « Collecte GNSS »).';
+    m.className = 'msg ' + (restricted ? 'warn' : 'ok');
+  }
+
   // ---------- Profils NTRIP (plusieurs fournisseurs : SmartNet, CAN-NET…) ----------
   var PROF_FIELDS = { host: 'nHost', port: 'nPort', user: 'nUser', pass: 'nPass', mount: 'nMount', gga: 'nGga', agent: 'nAgent' };
   function profFromFields(name) {
@@ -190,7 +209,7 @@
     if (!settings.ntripProfiles || !settings.ntripProfiles.length) {
       var first = profFromFields($('nHost').value.indexOf('smartnet') >= 0 ? 'SmartNet' : 'Profil 1');
       settings.ntripProfiles = [first, {
-        name: 'CAN-NET', host: 'gps.can-net.ca', port: '2300', user: '29655002000', pass: '', mount: 'qcvrsrtcm32', gga: true, agent: ''
+        name: 'CAN-NET', host: 'gps.can-net.ca', port: '2300', user: '', pass: '', mount: 'qcvrsrtcm32', gga: true, agent: ''
       }];
       if (first.host === 'gps.can-net.ca') settings.ntripProfiles.pop();
       settings.ntripActive = 0;
@@ -245,11 +264,13 @@
   function ntripStart() {
     persistFields();
     if (!Native) { setNtripMsg('Corrections disponibles seulement dans l’application Android.', 'warn'); return; }
+    if (radioMode()) { setNtripMsg('Source « Radio » choisie : le NTRIP mélangerait deux sources de corrections.', 'warn'); return; }
     if (!state.connected || state.sim) { setNtripMsg('Connecter d’abord un récepteur réel.', 'warn'); return; }
     if (!$('nHost').value || !$('nMount').value) { setNtripMsg('Serveur et point de montage requis.', 'warn'); return; }
     state.ntripOn = true; state.lastGgaToCaster = 0;
     $('btnNtrip').disabled = true; $('btnNtripStop').disabled = false;
     if (Native.ntripSetAgent) Native.ntripSetAgent($('nAgent').value.trim());
+    if (Native.ntripGgaEnabled) Native.ntripGgaEnabled($('nGga').checked);
     // La position est remise AVANT la connexion : certains serveurs (iMAX, VRS) l'exigent dès la demande.
     if (state.gga && $('nGga').checked) { Native.ntripGga(state.gga.raw); state.lastGgaToCaster = Date.now(); }
     Native.ntripStart($('nHost').value.trim(), parseInt($('nPort').value, 10) || 2101, $('nMount').value.trim(),
@@ -279,6 +300,7 @@
       maxSigmaH: numVal('cSH', 2) / 100, maxSigmaV: numVal('cSV', 3) / 100,
       requireFixed: $('cFix').checked
     });
+    state.measAgeMax = null;
     $('result').style.display = 'none';
     $('prog').style.width = '0%';
     $('measTxt').textContent = 'Mesure…';
@@ -300,7 +322,13 @@
       r.systeme = cv.hz.epsg ? 'EPSG:' + cv.hz.epsg : 'Geographiques';
       r.systemeAlti = cv.z !== null ? 'EPSG:10588' + (cv.vt.grid ? ' (' + cv.vt.grid + ')' : ' (separation fixe)') : 'Ellipsoidale';
     }
-    r.baseKm = baseKm(); r.baseId = state.base ? state.base.id : null;
+    r.baseKm = baseKm(); r.baseId = baseIdNow();
+    r.corrSrc = corrSourceLabel(); r.ageMax = state.measAgeMax;
+    var ageLim = numVal('kAgeMax', 5);
+    if (r.n && r.ageMax !== null && r.ageMax !== undefined && r.ageMax > ageLim) {
+      r.reasons.push('Âge des corrections jusqu\u2019à ' + r.ageMax.toFixed(1) + ' s (> ' + ageLim + ' s) : liaison ' + (radioMode() ? 'radio' : 'Internet') + ' faible, vérifier ou répéter');
+      r.baseWarn = true;
+    }
     if (r.n && r.baseKm !== null && r.baseKm > numVal('jBaseMax', 10)) {
       r.reasons.push('Ligne de base ' + r.baseKm.toFixed(1) + ' km > ' + numVal('jBaseMax', 10) + ' km : altitude moins fiable, répéter plus tard ou fermer sur un repère');
       r.baseWarn = true;
@@ -325,7 +353,8 @@
         ['Dispersion H / V', fmtCm(r.spreadH) + ' / ' + fmtCm(r.spreadV)],
         ['Époques', r.n + ' retenues' + (r.rejected ? ', ' + r.rejected + ' rejetées (non incluses dans la moyenne)' : '')],
         ['Solution', Nmea.FIX_LABELS[r.quality] || r.quality],
-        ['Ligne de base', r.baseKm === null ? 'inconnue' : r.baseKm.toFixed(1) + ' km' + (r.baseId !== null ? ' (station ' + r.baseId + ')' : '')]
+        ['Ligne de base', r.baseKm === null ? 'inconnue' : r.baseKm.toFixed(1) + ' km' + (r.baseId !== null ? ' (' + esc(String(r.baseId)) + ')' : '')],
+        ['Corrections', esc(r.corrSrc) + (r.ageMax !== null && r.ageMax !== undefined ? ' · âge max ' + r.ageMax.toFixed(1) + ' s' : '')]
       ]);
     } else rows = [['Époques rejetées', String(r.rejected)]];
     $('rList').innerHTML = rows.map(function (x) { return '<dt>' + x[0] + '</dt><dd>' + x[1] + '</dd>'; }).join('');
@@ -337,7 +366,7 @@
     var p = {
       leve: $('mLeve').value.trim(), nom: $('mNom').value.trim(), code: $('mCode').value.trim(), note: $('mNote').value.trim(),
       est: r.est, nord: r.nord, alt: r.alt, systeme: r.systeme, systemeAlti: r.systemeAlti, sep: r.sep,
-      baseKm: r.baseKm, baseId: r.baseId,
+      baseKm: r.baseKm, baseId: r.baseId, corrSrc: r.corrSrc, ageMax: r.ageMax,
       lat: r.lat, lon: r.lon, hEll: r.hEll, sigmaH: r.sigmaH, sigmaV: r.sigmaV, n: r.n, rejected: r.rejected,
       qualityLabel: (Nmea.FIX_LABELS[r.quality] || r.quality) + (r.ok ? '' : ' (hors critères)'),
       pole: r.pole, apc: r.apc, recepteur: state.driver ? state.driver.label : '', start: r.start, end: r.end
@@ -352,11 +381,82 @@
   function dropPoint() { state.pending = null; state.recorder = null; $('result').style.display = 'none'; $('prog').style.width = '0%'; }
   function redo() { dropPoint(); startMeasure(); }
 
-  // ---------- Ligne de base (position de la station lue dans les corrections) ----------
+  // ---------- Ligne de base ----------
+  // NTRIP : position de la station lue dans les corrections (1005/1006).
+  // Radio : position de la base inscrite (ou prise d'un point mesuré) dans l'onglet Récepteur.
   function baseKm() {
-    var g = state.gga, b = state.base;
-    if (!g || !b || g.hEll === null || Date.now() - b.at > 120000) return null;
+    var g = state.gga;
+    if (!g || g.hEll === null || g.lat === null) return null;
+    if (radioMode()) {
+      var rb = radioBase();
+      return rb ? Ntrip.baselineKm(g.lat, g.lon, g.hEll, rb.x, rb.y, rb.z) : null;
+    }
+    var b = state.base;
+    if (!b || Date.now() - b.at > 120000) return null;
     return Ntrip.baselineKm(g.lat, g.lon, g.hEll, b.x, b.y, b.z);
+  }
+  function baseIdNow() {
+    if (radioMode()) {
+      var nm = $('kBaseName').value.trim();
+      if (nm) return nm;
+      return state.gga && state.gga.refStation ? 'station ' + state.gga.refStation : null;
+    }
+    return state.base ? state.base.id : null;
+  }
+  function corrTooOld(g) { return g && g.quality >= 2 && g.ageCorr !== null && g.ageCorr !== undefined && g.ageCorr > numVal('kAgeMax', 5); }
+
+  // ---------- Source des corrections : NTRIP (tablette) ou radio (récepteur) ----------
+  function radioMode() { return $('kSrc').value === 'radio'; }
+  function corrSourceLabel() {
+    if (radioMode()) return 'Radio (recepteur)';
+    return state.ntripOn ? 'NTRIP ' + $('nMount').value.trim() : 'Aucune relayee par la tablette';
+  }
+  /* Position de la base (radio) : Est / Nord / Altitude dans le système du travail -> ECEF. */
+  function radioBase() {
+    var e = numVal('kBaseE', NaN), n = numVal('kBaseN', NaN);
+    if (isNaN(e) || isNaN(n)) return null;
+    var hz = Proj.horizontalById($('jHz').value);
+    if (!hz.zone) return null;
+    var geo = Proj.mtm(hz.zone).inverse(e, n); // NAD83 ou SCRS : écart d'environ 1 m, négligeable pour une ligne de base
+    var z = numVal('kBaseZ', NaN), vt = Proj.verticalById($('jVt').value), N = null;
+    if (vt.grid) N = Proj.gridValue(vt.grid, geo.lat, geo.lon);
+    else if (vt.id === '10588-sep') N = numVal('jSep', NaN);
+    var h = isNaN(z) ? (state.gga && state.gga.hEll !== null ? state.gga.hEll : 0) : z + (N === null || isNaN(N) ? 0 : N);
+    var p = Ntrip.geoToEcef(geo.lat, geo.lon, h);
+    p.lat = geo.lat; p.lon = geo.lon;
+    return p;
+  }
+  function applySrc() {
+    var radio = radioMode();
+    $('radioBox').style.display = radio ? '' : 'none';
+    $('ntripBox').style.display = radio ? 'none' : '';
+    if (radio && state.ntripOn) ntripStop();
+    renderRadio();
+  }
+  function renderRadio() {
+    if (!radioMode()) return;
+    var m = $('radioMsg'), hz = Proj.horizontalById($('jHz').value);
+    if (!hz.zone) { m.className = 'msg warn'; m.textContent = 'Choisir un système MTM dans l\u2019onglet Travail pour inscrire la base en Est / Nord.'; return; }
+    var rb = radioBase();
+    if (!rb) { m.className = 'msg'; m.textContent = 'Inscrire Est et Nord de la base (ou prendre un point mesuré) pour obtenir la ligne de base.'; return; }
+    m.className = 'msg ok';
+    m.textContent = 'Base : ' + rb.lat.toFixed(6) + '°, ' + rb.lon.toFixed(6) + '°' + (isNaN(numVal('kBaseZ', NaN)) ? ' (altitude non inscrite : hauteur du mobile utilisée)' : '') + '.';
+  }
+  function fillBasePoints() {
+    var sel = $('kBasePt'); sel.innerHTML = '';
+    addOpt(sel, '', points.length ? '— Choisir un point (' + points.length + ') —' : '— Aucun point mesuré —');
+    points.forEach(function (p, i) { if (p.lat !== null && p.lat !== undefined) addOpt(sel, String(i), p.nom + (p.code ? ' (' + p.code + ')' : '')); });
+  }
+  function takeBasePoint() {
+    var i = $('kBasePt').value; if (i === '') return;
+    var p = points[+i]; if (!p) return;
+    var cv = Proj.convert(p.lat, p.lon, p.hEll, job()); // recalculé dans le système actuel du travail
+    if (cv.e === null) { $('radioMsg').className = 'msg warn'; $('radioMsg').textContent = 'Système du travail sans coordonnées planes.'; return; }
+    $('kBaseE').value = cv.e.toFixed(3); $('kBaseN').value = cv.n.toFixed(3);
+    $('kBaseZ').value = cv.z !== null ? cv.z.toFixed(3) : '';
+    if (!$('kBaseName').value.trim()) $('kBaseName').value = p.nom;
+    $('kBasePt').value = '';
+    persistFields(); renderRadio();
   }
 
   // ---------- Travail : nom du levé et systèmes ----------
@@ -405,6 +505,7 @@
   // ---------- Points ----------
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function renderPoints() {
+    fillBasePoints();
     $('nbPoints').textContent = points.length ? '(' + points.length + ')' : '';
     $('ptEmpty').style.display = points.length ? 'none' : 'block';
     $('ptBody').innerHTML = points.map(function (p, i) {
@@ -439,8 +540,17 @@
       switch (ev.t) {
         case 'data': if (state.decoder) state.decoder.pushBytes(b64ToBytes(ev.b64)); break;
         case 'bt':
-          if (ev.state === 'connected') onConnected('Connecté à ' + (ev.msg || 'récepteur') + '.');
+          if (ev.state === 'connected') {
+            // Page rechargée pendant que le service était relié : recréer le décodeur.
+            if (!state.decoder) { state.driver = currentDriver(); state.decoder = state.driver.createDecoder(onSentence); }
+            onConnected('Connecté à ' + (ev.msg || 'récepteur') + '.');
+          }
           else if (ev.state === 'connecting') setBtMsg('Connexion…');
+          else if (ev.state === 'reconnecting') {
+            // Coupure du lien : le service réessaie seul ; les corrections NTRIP restent ouvertes.
+            if (!state.connected) onConnected('');
+            setBtMsg(ev.msg || 'Lien perdu — reconnexion…', 'warn');
+          }
           else if (ev.state === 'error') { onDisconnected('Erreur : ' + (ev.msg || ''), 'bad'); if (state.ntripOn) ntripStop(); }
           else { onDisconnected(ev.msg || 'Déconnecté.'); if (state.ntripOn) ntripStop(); }
           break;
@@ -449,6 +559,7 @@
           var kb = ev.bytes ? ' — ' + (ev.bytes / 1024).toFixed(1) + ' ko reçus' : '';
           setNtripMsg((ev.msg || ev.state) + kb, cls);
           if (ev.state === 'stopped') { state.ntripOn = false; $('btnNtrip').disabled = false; $('btnNtripStop').disabled = true; }
+          else if (!state.ntripOn) { state.ntripOn = true; $('btnNtrip').disabled = true; $('btnNtripStop').disabled = false; }
           break;
         case 'base':
           state.base = { id: ev.id, x: ev.x, y: ev.y, z: ev.z, at: Date.now() };
@@ -528,6 +639,13 @@
     points.splice(+i, 1); save(STORE_POINTS, points); renderPoints();
   });
   document.querySelectorAll('input').forEach(function (el) { el.addEventListener('change', persistFields); });
+  $('nGga').addEventListener('change', function () { if (Native && Native.ntripGgaEnabled) Native.ntripGgaEnabled(this.checked); });
+  $('bScreen').addEventListener('change', applyScreen);
+  $('kSrc').addEventListener('change', function () { persistFields(); applySrc(); });
+  $('kBasePt').addEventListener('change', takeBasePoint);
+  ['kBaseE', 'kBaseN', 'kBaseZ', 'jHz', 'jVt'].forEach(function (id) { $(id).addEventListener('change', renderRadio); });
+  $('btnBattery').addEventListener('click', function () { if (Native && Native.requestBatteryExemption) Native.requestBatteryExemption(); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) renderBackground(); });
 
   fillDrivers();
   fillSystems();
@@ -542,5 +660,13 @@
   renderPoints();
   updateGhost();
   updateJobUi();
+  applyScreen();
+  renderBackground();
+  applySrc();
+  // Le service de collecte a pu rester relié pendant que l'interface était fermée : on reprend son état.
+  if (Native && Native.syncState) {
+    var addr = Native.syncState();
+    if (addr) { $('selDevice').value = addr; }
+  }
   $('modeInfo').textContent = Native ? 'Application Android — version ' + Native.appVersion() : 'Mode navigateur : simulation seulement (le Bluetooth exige l’application Android).';
 })();

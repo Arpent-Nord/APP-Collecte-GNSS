@@ -271,4 +271,34 @@ test('ligne de base : station 3601 (message 1005) à 31,7 km du trépied, comme 
   assert.ok(Math.abs(km - 31.718) < 0.01, 'ligne de base ' + km + ' km (Flow : 31,718)');
 });
 
+test('radio : base inscrite en MTM 7 à 1 km du mobile -> ligne de base 1,000 km', () => {
+  const Ntrip = require(path.join(www, 'ntrip.js'));
+  const m7 = Proj.mtm(7), lat = 46.93376176, lon = -71.88125931, h = 172.6;
+  const p = m7.forward(lat, lon);
+  const g = m7.inverse(p.e + 1000, p.n); // base 1 km à l'est (comme radioBase() dans app.js)
+  const b = Ntrip.geoToEcef(g.lat, g.lon, h);
+  const km = Ntrip.baselineKm(lat, lon, h, b.x, b.y, b.z);
+  assert.ok(Math.abs(km - 1.0) < 0.002, 'ligne de base ' + km + ' km');
+});
+
+test('CSV : source et âge des corrections en fin de ligne ; nom de base avec virgule protégé', () => {
+  const cols = Survey.CSV_COLUMNS.map((c) => c[1]);
+  assert.deepStrictEqual(cols.slice(-3), ['Note', 'Source_corrections', 'Age_corr_max_s']);
+  assert.strictEqual(cols.indexOf('Station_base'), 18); // ordre historique conservé
+  const csv = Survey.toCsv([{ nom: 'P1', baseId: 'BASE 1, repère', corrSrc: 'Radio (recepteur)', ageMax: 1.23 }]);
+  const row = csv.split('\r\n')[1];
+  assert.ok(row.includes('"BASE 1, repère"'), row);
+  assert.ok(row.endsWith(',Radio (recepteur),1.2'), row);
+});
+
+test('pilote Leica (NMEA) disponible et décodeur fonctionnel', () => {
+  const d = Drivers.byId('leica-nmea');
+  assert.ok(d && d.brand === 'Leica' && /Captivate/.test(d.setup));
+  const got = [];
+  const dec = d.createDecoder((e) => got.push(e));
+  dec.pushText(Nmea.withChecksum('GNGGA,123519,4807.038,N,01131.000,E,4,08,0.9,545.4,M,46.9,M,1.0,0001') + '\r\n');
+  const gga = got.find((e) => e.type === 'GGA');
+  assert.ok(gga && gga.quality === 4 && gga.ageCorr === 1.0, JSON.stringify(got));
+});
+
 console.log(`\n${passed} tests réussis`);

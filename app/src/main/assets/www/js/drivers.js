@@ -22,7 +22,8 @@
       id: 'emlid-rs4', brand: 'Emlid', label: 'Emlid Reach RS4', transport: 'bluetooth',
       createDecoder: nmeaDecoder,
       setup: 'Dans Emlid Flow (une seule fois) : Sortie de position = Bluetooth, format NMEA (GGA, GST, RMC). ' +
-             'Entrée des corrections = Bluetooth (à valider selon le firmware).'
+             'Corrections : NTRIP par la tablette (entrée des corrections = Bluetooth) ou radio LoRa d’une base Emlid ' +
+             '(entrée = LoRa, même fréquence et débit que la base ; choisir « Radio » dans l’application).'
     },
     {
       id: 'emlid-rx2', brand: 'Emlid', label: 'Emlid Reach RX2', transport: 'bluetooth',
@@ -41,7 +42,16 @@
       // Phase 3 : décodeur GSOF (format binaire publié par Trimble) pour les écarts-types complets.
       setup: 'Configuration unique (Trimble Access, interface web du récepteur ou utilitaire Trimble) : ' +
              'activer la sortie NMEA GGA + GST sur le port Bluetooth et l’enregistrer comme réglage au démarrage. ' +
-             'Entrée RTCM par Bluetooth à valider pour chaque modèle.'
+             'Entrée RTCM par Bluetooth à valider pour chaque modèle. Radio UHF interne : choisir « Radio » dans l’application.'
+    },
+    {
+      id: 'leica-nmea', brand: 'Leica', label: 'Leica GS07, GS16, GS18 (NMEA)', transport: 'bluetooth',
+      createDecoder: nmeaDecoder,
+      // À valider aux essais : option NMEA sous licence, entrée RTCM par Bluetooth, référence de hauteur du NMEA.
+      setup: 'Configuration unique dans Leica Captivate : sortie NMEA (GGA + GST) sur le port Bluetooth, gardée au démarrage. ' +
+             'NTRIP par la tablette : entrée RTCM par Bluetooth à valider pour chaque modèle. ' +
+             'La compensation d’inclinaison (GS18 T / I) n’est pas transmise en NMEA : canne verticale (nivelle). ' +
+             'Vérifier le décalage vertical sur un point connu, comparé à Captivate.'
     },
     {
       id: 'generic-nmea', brand: 'Autre', label: 'Récepteur NMEA générique', transport: 'bluetooth',
