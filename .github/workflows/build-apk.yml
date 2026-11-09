@@ -1,21 +1,56 @@
 name: Compiler l'APK
 
+# Gestion des versions Arpent-Nord (01_Validation_des_versions) :
+#  - Chaque envoi sur main : tests + APK d'ESSAI publié dans la pré-release « essai » (remplacée à chaque fois,
+#    jamais « Latest »). Aucun tag de version n'est créé automatiquement.
+#  - Version officielle : créée avec 01_GERER_VERSIONS.bat (ou « Draft a new release », tag vX.Y.Z).
+#    Sa publication relance cette compilation, qui joint l'APK portant ce numéro à la release.
+
 on:
   push:
     branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: apk-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   apk:
+    # La pré-release « essai » elle-même ne relance rien.
+    if: github.event_name != 'release' || github.event.release.tag_name != 'essai'
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Tests du noyau (NMEA, mesure, CSV)
+      - name: Tests du noyau (NMEA, mesure, projections, codes, calculs)
         run: node tests/core.test.js
+
+      - name: Numéro de version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+            VERSION="${TAG#v}"
+            KIND=officielle
+          else
+            # Dernière version officielle (tag vX.Y.Z) + numéro de compilation : 0.3.0-essai.17
+            LAST=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+            VERSION="${LAST#v}-essai.${GITHUB_RUN_NUMBER}"
+            [ -z "$LAST" ] && VERSION="0.0.0-essai.${GITHUB_RUN_NUMBER}"
+            KIND=essai
+          fi
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "KIND=$KIND" >> "$GITHUB_ENV"
+          echo "Version : $VERSION ($KIND)"
 
       - uses: actions/setup-java@v4
         with:
@@ -48,20 +83,24 @@ jobs:
       - name: Renommer l'APK
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/release/*.apk "out/Collecte-GNSS-0.2.${GITHUB_RUN_NUMBER}.apk"
+          cp app/build/outputs/apk/release/*.apk "out/Collecte-GNSS-${APP_VERSION}.apk"
           ls -la out
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Collecte-GNSS-apk
+          name: Collecte-GNSS-${{ env.APP_VERSION }}
           path: out/*.apk
 
-      - name: Publier dans « Releases » (téléchargement direct)
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v0.2.${{ github.run_number }}
-          name: Collecte GNSS 0.2.${{ github.run_number }}
-          body: Version 0.2 — travail (MTM, CGVD28), mesure améliorée. Installer l’APK sur l’appareil Android (voir README).
-          prerelease: false
-          make_latest: true
-          files: out/*.apk
+      - name: Version officielle — joindre l'APK à la release
+        if: env.KIND == 'officielle'
+        run: gh release upload "${{ github.event.release.tag_name }}" out/*.apk --clobber -R "$GITHUB_REPOSITORY"
+
+      - name: Essai — remplacer la pré-release « essai »
+        if: env.KIND == 'essai'
+        run: |
+          gh release delete essai --cleanup-tag -y -R "$GITHUB_REPOSITORY" || true
+          cp out/*.apk out/Collecte-GNSS-essai.apk
+          printf 'Compilation d’essai %s (%s), du %s.\n\nPour les essais seulement : la version officielle est la release « Latest ».\n\nDernier changement : %s\n' \
+            "$APP_VERSION" "${GITHUB_SHA::7}" "$(date -u +%Y-%m-%d)" "$(git log -1 --pretty=%s)" > notes.md
+          gh release create essai out/*.apk -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Essai ${APP_VERSION}" --notes-file notes.md --prerelease --latest=false
