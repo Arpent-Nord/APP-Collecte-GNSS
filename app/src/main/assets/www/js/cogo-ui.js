@@ -27,17 +27,17 @@
   /* Dernier point portant ce nom, avec coordonnées planes. */
   function findPoint(name) {
     name = String(name || '').trim(); if (!name) return null;
-    var pts = Ctx.points();
+    var pts = Ctx.points(), job = Ctx.leve();
     for (var i = pts.length - 1; i >= 0; i--) {
       var p = pts[i];
-      if (p.nom === name && p.est !== null && p.est !== undefined) return { name: p.nom, e: p.est, n: p.nord, z: p.alt, src: p, idx: i };
+      if (p.nom === name && (p.leve || '') === job && p.est !== null && p.est !== undefined) return { name: p.nom, e: p.est, n: p.nord, z: p.alt, src: p, idx: i };
     }
     return null;
   }
   function need(names) {
     var out = [], missing = [];
     names.forEach(function (n) { var p = findPoint(n); if (p) out.push(p); else missing.push(n || '(vide)'); });
-    if (missing.length) throw new Error('Point introuvable : ' + missing.join(', '));
+    if (missing.length) throw new Error('Point introuvable dans le travail ' + (Ctx.leve() || '(sans nom)') + ' : ' + missing.join(', ') + ' (bouton Points pour le choisir ou l\u2019importer d\u2019un autre travail)');
     var sys = currentSystem(), other = out.filter(function (p) { return p.src.systeme && p.src.systeme !== sys; });
     if (other.length) throw new Error('Point ' + other[0].name + ' dans un autre système (' + other[0].src.systeme + ') que le travail (' + sys + ')');
     return out;
@@ -117,10 +117,21 @@
       type: type, formule: formule, start: new Date().toISOString()
     };
   }
+  /* Copie d'un point d'un autre travail vers le travail en cours : point théorique qui garde sa trace d'origine
+   * (travail et nom d'origine, conservés même s'il est recopié plus tard). */
+  function copyPoint(p, dest) {
+    var c = JSON.parse(JSON.stringify(p));
+    c.origLeve = p.origLeve || p.leve || ''; c.origNom = p.origNom || p.nom;
+    c.leve = dest;
+    if (c.type === 'mesure' || !c.type) c.type = 'importe';
+    c.formule = 'Copié du travail ' + (p.leve || '(sans nom)') + (p.formule && p.type !== 'mesure' ? ' — ' + p.formule : (p.type === 'mesure' || !p.type ? ' (mesuré)' : ''));
+    return c;
+  }
   function saveNew(nameId, codeId, c, formule, msgId) {
-    var name = $(nameId).value.trim();
+    var name = $(nameId).value.trim(), jw = Ctx.writable();
+    if (!jw.ok) { msg(msgId, jw.why, 'warn'); return false; }
     if (!name) { msg(msgId, 'Indiquer le nom du nouveau point.', 'warn'); return false; }
-    if (findPoint(name) && !confirm('Le point ' + name + ' existe déjà. Ajouter quand même un point du même nom ?')) return false;
+    if (findPoint(name)) { suggested[nameId] = Ctx.nextName(); msg(msgId, 'Le point ' + name + ' existe déjà dans ce travail. Prochain libre proposé : ' + suggested[nameId] + '.', 'warn'); $(nameId).value = suggested[nameId]; return false; }
     Ctx.addPoints([makePoint(name, $(codeId).value.trim() || computedCode(), c, 'calcule', formule)]);
     msg(msgId, 'Point ' + name + ' enregistré (' + formule + ').', 'ok');
     suggested[nameId] = Ctx.nextName(); $(nameId).value = suggested[nameId];
@@ -169,8 +180,9 @@
   // ---------- 1 Enregistre ----------
   $('c1Save').addEventListener('click', function () {
     var name = $('c1Nom').value.trim(), e = num('c1E'), n = num('c1N'), z = num('c1Z');
+    var jw = Ctx.writable(); if (!jw.ok) { msg('c1Msg', jw.why, 'warn'); return; }
     if (!name || isNaN(e) || isNaN(n)) { msg('c1Msg', 'Nom, Est et Nord requis.', 'warn'); return; }
-    if (findPoint(name) && !confirm('Le point ' + name + ' existe déjà. Ajouter quand même ?')) return;
+    if (findPoint(name)) { msg('c1Msg', 'Le point ' + name + ' existe déjà dans ce travail.', 'warn'); return; }
     Ctx.addPoints([makePoint(name, $('c1Code').value.trim(), { e: e, n: n, z: isNaN(z) ? null : z }, 'inscrit', 'Inscrit')]);
     msg('c1Msg', 'Point ' + name + ' enregistré.', 'ok');
     $('c1Nom').value = Ctx.nextName(); $('c1E').value = ''; $('c1N').value = ''; $('c1Z').value = '';
@@ -215,10 +227,12 @@
     var fr = new FileReader();
     fr.onload = function () {
       try {
+        var jw = Ctx.writable(); if (!jw.ok) throw new Error(jw.why.replace(/\.$/, ''));
         var list = parsePointFile(fr.result, $('c1Order').value), add = [], skipped = 0, replaced = 0;
         var dup = $('c1Dup').value, src = 'Importé de ' + file.name;
         list.forEach(function (r) {
           var ex = findPoint(r.name), p = makePoint(r.name, r.d, r, 'importe', src);
+          p.origLeve = file.name; p.origNom = r.name;
           if (ex && dup === 'skip') { skipped++; return; }
           if (ex && dup === 'replace') { Ctx.replacePoint(ex.idx, p); replaced++; return; }
           add.push(p);
@@ -275,7 +289,7 @@
   });
   /* Liste des levés présents sur l'appareil. */
   function fillLeves() {
-    var sel = $('c2Leve'), cur = sel.value || '*cur', seen = {}, opts = [['*cur', 'Levé en cours (' + (Ctx.leve() || 'sans nom') + ')'], ['*all', 'Tous les levés']];
+    var sel = $('c2Leve'), cur = sel.value || '*cur', seen = {}, opts = [['*cur', 'Travail en cours (' + (Ctx.leve() || 'sans nom') + ')'], ['*all', 'Tous les travaux']];
     Ctx.points().forEach(function (p) { var l = p.leve || ''; if (!seen[l] && l !== Ctx.leve()) { seen[l] = 1; opts.push([l, l || '(sans nom)']); } });
     sel.innerHTML = ''; opts.forEach(function (o) { var x = document.createElement('option'); x.value = o[0]; x.textContent = o[1]; sel.appendChild(x); });
     sel.value = opts.some(function (o) { return o[0] === cur; }) ? cur : '*cur';
@@ -283,17 +297,16 @@
   $('c1FromLeve').addEventListener('click', function () {
     $('cgN').value = 2; show(2);
     var sel = $('c2Leve'); if (sel.options.length > 2) sel.selectedIndex = 2;
-    $('c2Dest').value = ''; $('c2CopyBox').open = true; $('c2Seq').focus();
+    $('c2CopyBox').open = true; $('c2Seq').focus();
   });
   $('c2Copy').addEventListener('click', function () {
-    var dest = ($('c2Dest').value.trim() || Ctx.leve()).toUpperCase();
-    if (!lastList.length || !dest) { msg('c2Msg', 'Lister les points et indiquer le levé de destination.', 'warn'); return; }
+    var dest = Ctx.leve(), jw = Ctx.writable();
+    if (!jw.ok) { msg('c2Msg', jw.why, 'warn'); return; }
+    if (!lastList.length) { msg('c2Msg', 'Lister d\u2019abord les points à copier.', 'warn'); return; }
     var inDest = {}; Ctx.points().forEach(function (p) { if ((p.leve || '') === dest) inDest[p.nom] = 1; });
     var skipped = 0;
     var copies = lastList.filter(function (p) { if (inDest[p.nom]) { skipped++; return false; } return true; }).map(function (p) {
-      var c = JSON.parse(JSON.stringify(p)); c.leve = dest;
-      if (c.type === 'mesure' || !c.type) { c.type = 'importe'; c.formule = 'Copié du levé ' + (p.leve || '(sans nom)'); }
-      return c;
+      return copyPoint(p, dest);
     });
     if (copies.length) Ctx.addPoints(copies);
     msg('c2Msg', copies.length + ' point(s) copié(s) vers le levé ' + dest + ' (comme points théoriques)' + (skipped ? ', ' + skipped + ' ignoré(s) : déjà dans ce levé' : '') + '.', copies.length ? 'ok' : 'warn');
@@ -483,7 +496,7 @@
     d.innerHTML = '<div class="pkbox" role="dialog" aria-modal="true">' +
       '<div class="pkhead"><b id="pkTitle">Choisir un point</b><button class="pkx" id="pkClose" type="button" aria-label="Fermer">×</button></div>' +
       '<input id="pkQ" placeholder="Chercher : nom, code, description" autocomplete="off">' +
-      '<div class="pkopts"><label>Levé<select id="pkLeve"></select></label>' +
+      '<div class="pkopts"><label>Travail<select id="pkLeve"></select></label>' +
       '<label>Ordre<select id="pkSort"><option value="recent">Plus récents</option><option value="near">Plus proches de moi</option><option value="name">Par nom</option></select></label></div>' +
       '<div class="pklist" id="pkList"></div>' +
       '<div class="pkfoot"><div class="pkseq" id="pkSeq"></div>' +
@@ -495,7 +508,7 @@
   })();
   if (S.pkSort) $('pkSort').value = S.pkSort;
   function leveList() {
-    var cur = Ctx.leve(), seen = {}, out = [['*cur', 'Levé en cours (' + (cur || 'sans nom') + ')'], ['*all', 'Tous les levés']];
+    var cur = Ctx.leve(), seen = {}, out = [['*cur', 'Travail en cours (' + (cur || 'sans nom') + ')'], ['*all', 'Tous les travaux']];
     Ctx.points().forEach(function (p) { var l = p.leve || ''; if (!seen[l] && l !== cur) { seen[l] = 1; out.push([l, l || '(sans nom)']); } });
     return out;
   }
@@ -538,13 +551,13 @@
     if (isCode) return renderCodes();
     var r = pkPoints(), box = $('pkList'), f = function (v) { return v === null || v === undefined ? '—' : v.toFixed(3); };
     box.innerHTML = '';
-    if (!r.list.length) box.innerHTML = '<p class="hint" style="padding:10px">Aucun point' + ($('pkQ').value ? ' pour cette recherche' : ' dans ce levé') + '. Essayez « Tous les levés ».</p>';
+    if (!r.list.length) box.innerHTML = '<p class="hint" style="padding:10px">Aucun point' + ($('pkQ').value ? ' pour cette recherche' : ' dans ce travail') + '. Essayez « Tous les travaux ».</p>';
     r.list.slice(0, 300).forEach(function (x) {
       var p = x.p, b = document.createElement('button'), theo = p.type && p.type !== 'mesure';
       b.type = 'button'; b.className = 'pkrow' + (PK.chosen.indexOf(p.nom) >= 0 ? ' sel' : '');
       b.innerHTML = '<span class="nm' + (theo ? ' theo' : '') + '">' + esc(p.nom) + '</span><span class="cd">' + esc(p.code || '') + (p.codeDesc ? ' · ' + esc(p.codeDesc) : '') + '</span>' +
         '<span class="xy">E ' + f(p.est) + ' · N ' + f(p.nord) + ' · Z ' + f(p.alt) + (x.d !== undefined ? ' · à ' + x.d.toFixed(1) + ' m' : '') + (theo ? ' · ' + esc(p.type) : '') + '</span>';
-      b.addEventListener('click', function () { pickPoint(p.nom); });
+      b.addEventListener('click', function () { pickPoint(p.nom, p); });
       box.appendChild(b);
     });
     if ($('pkSort').value === 'near' && !r.here) box.insertAdjacentHTML('afterbegin', '<p class="hint" style="padding:6px">Position du récepteur inconnue : ordre des plus récents.</p>');
@@ -570,7 +583,24 @@
     var inp = PK.input; closePicker(); if (!inp) return;
     inp.value = val; inp.dispatchEvent(new Event('input')); inp.dispatchEvent(new Event('change'));
   }
-  function pickPoint(name) {
+  /* Point d'un autre travail : on l'importe dans le travail en cours (trace d'origine conservée). */
+  function bringIn(p) {
+    var cur = Ctx.leve();
+    if ((p.leve || '') === cur) return true;
+    var here = findPoint(p.nom);
+    if (here) {
+      var s0 = here.src;
+      if (s0.origLeve === (p.leve || '') && s0.origNom === p.nom) return true;      // déjà importé
+      $('pkSeq').textContent = 'Le travail en cours a déjà un point ' + p.nom + ' (autre origine) : choisir un autre point.'; return false;
+    }
+    var jw = Ctx.writable();
+    if (!jw.ok) { $('pkSeq').textContent = jw.why; return false; }
+    if (!confirm('Importer le point ' + p.nom + ' du travail ' + (p.leve || '(sans nom)') + ' dans le travail en cours (' + cur + ') ?\nIl gardera sa trace d\u2019origine.')) return false;
+    Ctx.addPoints([copyPoint(p, cur)]);
+    return true;
+  }
+  function pickPoint(name, p) {
+    if (p && !bringIn(p)) return;
     if (PK.mode === 'one') { finish(name); return; }
     if (PK.mode === 'pair') {
       PK.chosen.push(name);

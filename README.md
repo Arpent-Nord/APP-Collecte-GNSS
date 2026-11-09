@@ -115,6 +115,15 @@ Onglet Récepteur, carte « Travail écran éteint » : option « Garder l'écra
   `node tools/maj-codes.js chemin/APP-PCodes/index.html` (dépôt public `Arpent-Nord/APP-PCodes`). À refaire quand la liste change.
 - CSV : colonne `Description_code` ajoutée à la fin.
 
+## Travaux (jobs)
+
+- Le **travail en cours** est affiché en permanence sous le titre, dans tous les onglets (nom, date, nombre de points, état). Le toucher ouvre l'onglet Travail.
+- **Ouvert / consultation** : seul critère, la **date** du travail (AAMMJJ du nom, sinon date de création). Un travail daté d'aujourd'hui reçoit des points (mesurés, calculés, inscrits, importés, copiés). Un travail d'un autre jour s'ouvre en consultation (liste, inverses, superficies, export, copie de ses points vers le travail du jour) ; pour mesurer, créer un nouveau travail. Le passage à minuit est détecté.
+- Onglet Travail : **Ouvrir un travail de l'appareil** (liste avec date et nombre de points) et **Nouveau travail**.
+- Les calculs et sélecteurs travaillent dans le **travail en cours** : un point choisi dans un autre travail y est **importé** (avec confirmation) et garde sa **trace d'origine** (`Leve_origine`, `Point_origine` au CSV, conservées même après plusieurs copies). Deux points du même nom ne peuvent pas coexister dans un travail.
+- Onglet Points et export CSV : le travail en cours (option « tous les travaux »).
+- Avertissement si le code d'arpenteur (SS) manque : les numéros AJJJSSNNN ne peuvent pas être produits.
+
 ## Calculs (COGO) — raccourcis à la Menarp
 
 Onglet **Calculs** : taper le numéro (ou toucher le bouton). Les numéros reprennent ceux de Menarp / Cadarp 2000 (Roger Perreault, Développement Darp), connus de plusieurs arpenteurs.

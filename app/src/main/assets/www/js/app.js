@@ -8,7 +8,7 @@
   var Native = window.GnssNative || null;
   // La position (GGA) part vers le serveur NTRIP depuis le service natif (écran éteint compris).
   var NATIVE_GGA = !!(Native && Native.nativeGga && Native.nativeGga());
-  var STORE_SETTINGS = 'cg.settings.v1', STORE_POINTS = 'cg.points.v1', STORE_REF = 'cg.reference.v1';
+  var STORE_SETTINGS = 'cg.settings.v1', STORE_POINTS = 'cg.points.v1', STORE_REF = 'cg.reference.v1', STORE_JOBS = 'cg.jobs.v1';
 
   // ---------- Stockage local (sur l'appareil seulement) ----------
   function load(key, def) { try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch (e) { return def; } }
@@ -16,6 +16,7 @@
 
   var settings = load(STORE_SETTINGS, {});
   var points = load(STORE_POINTS, []);
+  var jobs = load(STORE_JOBS, {});      // { nom du travail : { created: ISO } }
 
   var FIELDS = ['selDriver', 'nHost', 'nPort', 'nUser', 'nPass', 'nMount', 'nGga', 'nAgent', 'bScreen', 'kSrc', 'kAgeMax', 'kBaseName', 'kBaseE', 'kBaseN', 'kBaseZ',
     'mLeve', 'mNom', 'mCode', 'mStr', 'jSS', 'jNum', 'jA', 'jSect', 'jType', 'jNat', 'mPole', 'cDur', 'cMin', 'cSH', 'cSV', 'cFix', 'jHz', 'jVt', 'jSep', 'jBaseMax'];
@@ -104,7 +105,9 @@
     if (c && c.warn !== state.lastWarn) { state.lastWarn = c.warn; updateJobUi(); }
     $('log').textContent = logBuf.join('\n');
     var measuring = state.recorder && !state.recorder.done;
-    $('btnMeasure').disabled = !state.connected || !fresh || measuring || !!state.pending;
+    var jw = jobWritable();
+    $('btnMeasure').disabled = !state.connected || !fresh || measuring || !!state.pending || !jw.ok;
+    $('jobWarn').style.display = jw.ok ? 'none' : ''; if (!jw.ok) $('jobWarn').textContent = jw.why;
     $('btnMeasure').textContent = measuring ? 'Mesure en cours' : 'Mesurer';
   }
   setInterval(function () { state.rate = state.ggaCount; state.ggaCount = 0; }, 1000);
@@ -363,6 +366,14 @@
   }
   function keepPoint() {
     var r = state.pending; if (!r || !r.n) return;
+    var jw = jobWritable(); if (!jw.ok) { alertMsg(jw.why); return; }
+    var nm = $('mNom').value.trim();
+    if (jobPoints().some(function (q) { return q.nom === nm; })) {
+      var nx = settings.jNum === 'libre' ? null : autoPointName();
+      alertMsg('Le point ' + nm + ' existe déjà dans ce travail. Changer le nom' + (nx ? ' (prochain libre : ' + nx + ')' : '') + ' puis conserver.');
+      if (nx) $('mNom').value = nx;
+      return;
+    }
     var p = {
       leve: $('mLeve').value.trim(), nom: $('mNom').value.trim(), code: $('mCode').value.trim(), note: $('mNote').value.trim(),
       codeDesc: codeDescription($('mCode').value), type: 'mesure',
@@ -554,7 +565,7 @@
     if (!/^[A-Z0-9]{4}$/.test(sect)) { alertLeve('Le secteur compte 4 caractères (lettres ou chiffres).'); return; }
     if (!$('jNat').value) { alertLeve('Choisir la nature (NAT).'); return; }
     $('mLeve').value = Codes.leveName({ date: new Date(), sect: sect, type: $('jType').value, nat: $('jNat').value, ss: ss });
-    persistFields(); updateGhost(); updateJobUi();
+    persistFields(); updateGhost(); updateJobUi(); registerJob($('mLeve').value.trim()); renderJobBar(); refreshAutoName();
   }
   function alertLeve(t) { var m = $('leveMsg'); m.style.display = ''; m.className = 'msg warn'; m.textContent = t; }
 
@@ -679,29 +690,36 @@
     var ymd = String(d.getFullYear()).slice(2) + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
     var v = $('mLeve').value;
     $('mLeve').value = v.replace(/^\d{0,6}/, ymd);
-    updateGhost(); updateJobUi(); persistFields(); $('mLeve').focus();
+    updateGhost(); updateJobUi(); persistFields(); renderJobBar(); $('mLeve').focus();
   }
 
   // ---------- Points ----------
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function renderPoints() {
-    fillBasePoints();
-    $('nbPoints').textContent = points.length ? '(' + points.length + ')' : '';
-    $('ptEmpty').style.display = points.length ? 'none' : 'block';
-    $('ptBody').innerHTML = points.map(function (p, i) {
+    fillBasePoints(); if (window.AppCtx) renderJobBar();
+    var all = $('ptAll').checked, cur = $('mLeve').value.trim();
+    var shown = []; points.forEach(function (p, i) { if (all || (p.leve || '') === cur) shown.push({ p: p, i: i }); });
+    $('nbPoints').textContent = shown.length ? '(' + shown.length + ')' : '';
+    $('ptEmpty').style.display = shown.length ? 'none' : 'block';
+    $('ptEmpty').textContent = all ? 'Aucun point sur l\u2019appareil.' : 'Aucun point dans le travail ' + (cur || '(sans nom)') + '.';
+    $('ptJobTh').style.display = all ? '' : 'none';
+    $('btnExport').textContent = all ? 'Exporter tous les travaux (CSV)' : 'Exporter le travail en cours (CSV)';
+    $('ptBody').innerHTML = shown.map(function (x) {
+      var p = x.p, i = x.i;
       var f3 = function (v) { return v === null || v === undefined ? '—' : v.toFixed(3); };
       var theo = p.type && p.type !== 'mesure';
       return '<tr><td' + (theo ? ' class="theo" title="' + esc(p.type + (p.formule ? ' : ' + p.formule : '')) + '"' : '') + '>' + esc(p.nom) + '</td><td>' + esc(p.code) + '</td><td class="num">' + f3(p.est) + '</td><td class="num">' + f3(p.nord) +
         '</td><td class="num">' + f3(p.alt) + '</td><td class="num">' + fmtCm(p.sigmaH) + '</td><td class="num">' + fmtCm(p.sigmaV) +
-        '</td><td><button class="btn danger" data-del="' + i + '" title="Supprimer">✕</button></td></tr>';
+        '</td>' + (all ? '<td>' + esc(p.leve || '') + '</td>' : '') + '<td><button class="btn danger" data-del="' + i + '" title="Supprimer">✕</button></td></tr>';
     }).join('');
   }
   function exportCsv() {
-    if (!points.length) return;
-    var csv = Survey.toCsv(points);
+    var cur = $('mLeve').value.trim(), list = $('ptAll').checked ? points : points.filter(function (p) { return (p.leve || '') === cur; });
+    if (!list.length) return;
+    var csv = Survey.toCsv(list);
     var d = new Date();
     var stamp = String(d.getFullYear()).slice(2) + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
-    var leve = (points[points.length - 1].leve || 'collecte').replace(/[^\w#-]+/g, '_');
+    var leve = ($('ptAll').checked ? 'tous_travaux' : (cur || 'collecte')).replace(/[^\w#-]+/g, '_');
     var name = leve + '_' + stamp + '.csv';
     if (Native) { Native.saveFile(name, 'text/csv', csv); return; }
     var a = document.createElement('a');
@@ -800,7 +818,7 @@
   $('btnMeasure').addEventListener('click', startMeasure);
   $('btnCancel').addEventListener('click', cancelMeasure);
   $('btnToday').addEventListener('click', today);
-  $('mLeve').addEventListener('input', function () { updateGhost(); updateJobUi(); });
+  $('mLeve').addEventListener('input', function () { updateGhost(); updateJobUi(); renderJobBar(); });
   ['jHz', 'jVt', 'jSep'].forEach(function (id) { $(id).addEventListener('change', function () { updateJobUi(); persistFields(); }); });
   $('mApc').addEventListener('change', function () {
     settings.apcByDriver = settings.apcByDriver || {};
@@ -810,13 +828,16 @@
   $('btnDrop').addEventListener('click', dropPoint);
   $('btnRedo').addEventListener('click', redo);
   $('btnExport').addEventListener('click', exportCsv);
+  $('ptAll').addEventListener('change', renderPoints);
   $('btnClear').addEventListener('click', function () {
     if (!points.length || !confirm('Effacer les ' + points.length + ' points de cet appareil?')) return;
     points = []; save(STORE_POINTS, points); renderPoints();
   });
   $('ptBody').addEventListener('click', function (e) {
     var i = e.target.getAttribute('data-del'); if (i === null) return;
-    if (!confirm('Supprimer le point ' + points[i].nom + '?')) return;
+    var pt = points[i], jw = jobWritable();
+    if ((pt.leve || '') !== $('mLeve').value.trim() || !jw.ok) { alert('Le point ' + pt.nom + ' appartient au travail ' + (pt.leve || '(sans nom)') + ', en consultation : il ne peut pas être supprimé.'); return; }
+    if (!confirm('Supprimer le point ' + pt.nom + ' du travail ' + (pt.leve || '') + ' ?')) return;
     points.splice(+i, 1); save(STORE_POINTS, points); renderPoints();
   });
   document.querySelectorAll('input').forEach(function (el) { el.addEventListener('change', persistFields); });
@@ -876,20 +897,84 @@
   renderSS();
   renderRef();
   refreshAutoName();
+  if ($('mLeve').value.trim()) registerJob($('mLeve').value.trim());
+  renderJobBar();
   // Le service de collecte a pu rester relié pendant que l'interface était fermée : on reprend son état.
   if (Native && Native.syncState) {
     var addr = Native.syncState();
     if (addr) { $('selDevice').value = addr; }
   }
+  // ---------- Travaux (jobs) : le travail en cours, ouvert ou en consultation ----------
+  function sameDay(a, b) { return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+  function registerJob(name) {
+    if (!name || jobs[name]) return;
+    jobs[name] = { created: new Date().toISOString() }; save(STORE_JOBS, jobs);
+  }
+  /* Date d'un travail : AAMMJJ du nom (NDA-001), sinon date de création, sinon date du premier point. */
+  function jobDate(name) {
+    var m = /^(\d{2})(\d{2})(\d{2})/.exec(name || '');
+    if (m) { var d = new Date(2000 + +m[1], +m[2] - 1, +m[3]); if (d.getMonth() === +m[2] - 1 && d.getDate() === +m[3]) return d; }
+    if (jobs[name] && jobs[name].created) return new Date(jobs[name].created);
+    for (var i = 0; i < points.length; i++) if (points[i].leve === name && points[i].start) return new Date(points[i].start);
+    return null;
+  }
+  function jobPoints(name) { name = name === undefined ? $('mLeve').value.trim() : name; return points.filter(function (p) { return (p.leve || '') === name; }); }
+  /* Le travail en cours reçoit-il des points ? Critère : sa date est aujourd'hui. */
+  function jobWritable() {
+    var name = $('mLeve').value.trim();
+    if (!name) return { ok: false, why: 'Aucun travail : inscrire ou composer le nom du travail dans l’onglet Travail.' };
+    var d = jobDate(name);
+    if (d && !sameDay(d, new Date())) return { ok: false, why: 'Travail ' + name + ' du ' + d.toLocaleDateString('fr-CA') + ' : en consultation seulement. Créer un nouveau travail pour ajouter des points.' };
+    return { ok: true, why: '' };
+  }
+  function allJobs() {
+    var map = {};
+    Object.keys(jobs).forEach(function (n) { map[n] = 0; });
+    points.forEach(function (p) { var n = p.leve || ''; if (n) map[n] = (map[n] || 0) + 1; });
+    return Object.keys(map).map(function (n) { return { name: n, count: map[n], date: jobDate(n) }; })
+      .sort(function (a, b) { return (b.date ? b.date.getTime() : 0) - (a.date ? a.date.getTime() : 0) || a.name.localeCompare(b.name); });
+  }
+  function renderJobBar() {
+    var name = $('mLeve').value.trim(), bar = $('jobBar'), jw = jobWritable(), d = jobDate(name);
+    bar.className = 'jobbar' + (!name ? ' none' : jw.ok ? '' : ' closed');
+    var ssMissing = settings.jNum !== 'libre' && !ssValue();
+    if (!name) bar.innerHTML = '<b>Aucun travail</b><small>Toucher ici pour créer ou ouvrir un travail.</small>';
+    else bar.innerHTML = '<span class="st">' + (jw.ok ? 'Ouvert' : 'Consultation') + '</span>Travail <b>' + esc(name) + '</b>' +
+      '<small>' + (d ? d.toLocaleDateString('fr-CA') + ' · ' : '') + jobPoints(name).length + ' point(s)' +
+      (ssMissing ? ' · <span style="color:var(--bad)">code d’arpenteur manquant : numéros de points non conformes</span>' : '') + '</small>';
+    var sel = $('jOpen'), cur = sel.value; sel.innerHTML = '';
+    var o0 = document.createElement('option'); o0.value = ''; o0.textContent = '— Choisir (' + allJobs().length + ') —'; sel.appendChild(o0);
+    allJobs().forEach(function (j) {
+      var o = document.createElement('option'); o.value = j.name;
+      o.textContent = j.name + ' · ' + (j.date ? j.date.toLocaleDateString('fr-CA') : 's. d.') + ' · ' + j.count + ' pt' + (j.date && sameDay(j.date, new Date()) ? ' · ouvert' : '');
+      sel.appendChild(o);
+    });
+    sel.value = '';
+  }
+  function openJob(name) {
+    $('mLeve').value = name; registerJob(name); persistFields();
+    updateGhost(); updateJobUi(); renderJobBar(); refreshAutoName();
+  }
+  $('jobBar').addEventListener('click', function () { showTab('travail'); });
+  $('jOpen').addEventListener('change', function () { if (this.value) openJob(this.value); });
+  $('btnNewJob').addEventListener('click', function () {
+    $('mLeve').value = ''; updateGhost(); renderJobBar();
+    var det = document.querySelector('#tab-travail details'); if (det) det.open = true;
+    $('mLeve').focus();
+  });
+  $('mLeve').addEventListener('change', function () { var n = this.value.trim(); if (n) registerJob(n); renderJobBar(); refreshAutoName(); });
+  setInterval(renderJobBar, 60000);   // passage à minuit : le travail de la veille devient en consultation
+
   // ---------- Contexte partagé avec le module Calculs (cogo-ui.js) ----------
   window.AppCtx = {
     points: function () { return points; },
     job: job,
     leve: function () { return $('mLeve').value.trim(); },
+    writable: jobWritable, jobPoints: jobPoints,
     /* Ajoute des points (calculés, inscrits, importés) à la base de l'appareil. */
     addPoints: function (list) {
       list.forEach(function (p) { points.push(p); });
-      save(STORE_POINTS, points); renderPoints();
+      save(STORE_POINTS, points); renderPoints(); renderJobBar();
       var names = {}; list.forEach(function (p) { names[p.nom] = 1; });
       if (names[$('mNom').value.trim()]) { $('mNom').value = settings.jNum === 'libre' ? Survey.nextPointName($('mNom').value.trim()) : (autoPointName() || Survey.nextPointName($('mNom').value.trim())); persistFields(); }
     },

@@ -158,7 +158,7 @@
     ['qualityLabel', 'Solution'], ['baseKm', 'Ligne_base_km'], ['baseId', 'Station_base'], ['pole', 'Hauteur_canne'], ['apc', 'Decalage_recepteur'],
     ['recepteur', 'Recepteur'], ['start', 'Debut_UTC'], ['end', 'Fin_UTC'], ['note', 'Note'],
     // Ajoutée à la fin (0.2.12+) pour ne pas déplacer les colonnes lues par les autres outils.
-    ['corrSrc', 'Source_corrections'], ['ageMax', 'Age_corr_max_s'], ['codeDesc', 'Description_code'], ['type', 'Type_point'], ['formule', 'Formule']
+    ['corrSrc', 'Source_corrections'], ['ageMax', 'Age_corr_max_s'], ['codeDesc', 'Description_code'], ['type', 'Type_point'], ['formule', 'Formule'], ['origLeve', 'Leve_origine'], ['origNom', 'Point_origine']
   ];
 
   function fmt(key, v) {

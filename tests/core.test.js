@@ -283,12 +283,12 @@ test('radio : base inscrite en MTM 7 à 1 km du mobile -> ligne de base 1,000 km
 
 test('CSV : source et âge des corrections en fin de ligne ; nom de base avec virgule protégé', () => {
   const cols = Survey.CSV_COLUMNS.map((c) => c[1]);
-  assert.deepStrictEqual(cols.slice(-6), ['Note', 'Source_corrections', 'Age_corr_max_s', 'Description_code', 'Type_point', 'Formule']);
+  assert.deepStrictEqual(cols.slice(-8), ['Note', 'Source_corrections', 'Age_corr_max_s', 'Description_code', 'Type_point', 'Formule', 'Leve_origine', 'Point_origine']);
   assert.strictEqual(cols.indexOf('Station_base'), 18); // ordre historique conservé
   const csv = Survey.toCsv([{ nom: 'P1', baseId: 'BASE 1, repère', corrSrc: 'Radio (recepteur)', ageMax: 1.23 }]);
   const row = csv.split('\r\n')[1];
   assert.ok(row.includes('"BASE 1, repère"'), row);
-  assert.ok(row.endsWith(',Radio (recepteur),1.2,,,'), row);
+  assert.ok(row.endsWith(',Radio (recepteur),1.2,,,,,'), row);
 });
 
 test('pilote Leica (NMEA) disponible et décodeur fonctionnel', () => {

@@ -41,6 +41,15 @@ header.top { position: sticky; top: 0; z-index: 5; background: var(--surface); b
 h1 { margin: 0; font-size: 20px; font-weight: 700; flex: 1; }
 .theme { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 9px; cursor: pointer; }
 
+.jobbar { display: block; width: 100%; text-align: left; margin: 6px 0 0; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--primary);
+  background: var(--primary-soft); color: var(--ink); font-size: 14px; cursor: pointer; line-height: 1.25; }
+.jobbar b { font-size: 16px; letter-spacing: .3px; color: var(--primary); }
+.jobbar .st { float: right; font-weight: 700; color: var(--ok); }
+.jobbar.closed { border-color: var(--warn); background: var(--warn-soft); }
+.jobbar.closed b, .jobbar.closed .st { color: var(--warn); }
+.jobbar.none { border-color: var(--bad); background: var(--bad-soft); }
+.jobbar.none b { color: var(--bad); }
+.jobbar small { display: block; color: var(--muted); font-size: 12px; }
 .statusbar { display: grid; grid-template-columns: auto 1fr 1fr 1fr 1fr; gap: 8px; align-items: center; padding: 10px 0; }
 .kv.far b { color: var(--warn); }
 .fix.old { background: var(--warn-soft); color: var(--warn); }
@@ -166,6 +175,7 @@ details summary { cursor: pointer; font-weight: 600; }
     <h1>Collecte GNSS</h1>
     <button class="theme" id="btnTheme" title="Mode clair ou sombre">◐</button>
   </div>
+  <button class="jobbar" id="jobBar" type="button"></button>
   <div class="statusbar">
     <span class="fix off" id="sbFix">Déconnecté</span>
     <div class="kv">Préc. H<b id="sbSH">—</b></div>
@@ -187,6 +197,13 @@ details summary { cursor: pointer; font-weight: 600; }
   <section class="tab" id="tab-travail">
     <div class="card">
       <h2>Travail</h2>
+      <div class="grid" style="margin-bottom:10px">
+        <label class="full">Ouvrir un travail de l’appareil
+          <select id="jOpen"></select>
+        </label>
+        <p class="hint full" style="margin:0">Un travail daté d’aujourd’hui reçoit des points (mesurés, calculés, copiés). Un travail d’un autre jour s’ouvre en <b>consultation</b> : liste, inverses, superficies et copie de ses points vers le travail du jour ; pour mesurer, créer un nouveau travail.</p>
+        <div class="row full" style="margin-top:0"><button class="btn" id="btnNewJob" type="button">Nouveau travail</button></div>
+      </div>
       <div class="grid">
         <div class="full">
           <div class="inline">
@@ -416,6 +433,7 @@ details summary { cursor: pointer; font-weight: 600; }
         <label class="full check"><input type="checkbox" id="cFix" checked>Exiger RTK fixe</label>
       </div>
     </div>
+    <div class="msg warn" id="jobWarn" style="display:none;margin-bottom:10px"></div>
     <button class="btn primary big" id="btnMeasure" disabled>Mesurer</button>
     <div class="measbox" id="measBox">
       <div class="top">
@@ -480,7 +498,7 @@ details summary { cursor: pointer; font-weight: 600; }
       <div class="row"><button class="btn primary" id="c1Save">Enregistrer le point</button></div>
       <div class="msg" style="margin-top:12px">Récupérer des points d’un autre levé de l’appareil (ex. levé du matin vers le levé de l’après-midi) :
         <button class="btn" id="c1FromLeve" type="button" style="margin-left:6px">Ouvrir 2 · Liste</button>
-        <span class="hint" style="display:block;margin-top:4px">Choisir le levé d’origine, lister, puis « Copier vers le levé en cours ».</span></div>
+        <span class="hint" style="display:block;margin-top:4px">Choisir le travail d’origine, lister, puis « Copier vers le travail en cours ». Les points gardent leur trace d’origine.</span></div>
       <h2 style="margin-top:16px">Importer un fichier de points</h2>
       <div class="grid">
         <label>Ordre des colonnes (fichier sans en-tête)
@@ -507,16 +525,16 @@ details summary { cursor: pointer; font-weight: 600; }
           <select id="c2Type"><option value="">Tous</option><option value="mesure">Mesurés</option><option value="theo">Théoriques (calculés, inscrits, importés)</option></select>
         </label>
         <label>Code contient<input id="c2Code" autocomplete="off" placeholder="ex. 526"></label>
-        <label class="full">Levé<select id="c2Leve"></select></label>
+        <label class="full">Travail<select id="c2Leve"></select></label>
         <label>Comparer à la ligne : de<input id="c2A" autocomplete="off" placeholder="point A"></label>
         <label>à<input id="c2B" autocomplete="off" placeholder="point B"></label>
       </div>
       <div class="row"><button class="btn primary" id="c2Go">Lister</button><button class="btn" id="c2Csv">Exporter la liste (CSV)</button></div>
       <div class="msg" id="c2Msg" style="display:none"></div>
       <div class="tablewrap"><table id="c2Table"></table></div>
-      <details style="margin-top:10px" id="c2CopyBox"><summary>Copier la liste vers un levé</summary>
-        <label style="margin-top:8px">Levé de destination (par défaut : le levé en cours)<input id="c2Dest" autocomplete="off" autocapitalize="characters"></label>
-        <div class="row"><button class="btn" id="c2Copy">Copier</button></div>
+      <details style="margin-top:10px" id="c2CopyBox"><summary>Copier la liste vers le travail en cours</summary>
+        <p class="hint">Les points copiés deviennent théoriques dans le travail en cours et gardent leur travail et leur nom d’origine (colonnes Leve_origine, Point_origine du CSV). Les noms déjà présents sont ignorés.</p>
+        <div class="row"><button class="btn" id="c2Copy">Copier vers le travail en cours</button></div>
       </details>
     </div>
 
@@ -599,10 +617,11 @@ details summary { cursor: pointer; font-weight: 600; }
   <!-- ===================== POINTS ===================== -->
   <section class="tab" id="tab-points">
     <div class="card">
-      <h2>Points mesurés</h2>
+      <h2>Points</h2>
+      <label class="check" style="margin-bottom:8px"><input type="checkbox" id="ptAll">Afficher tous les travaux de l’appareil</label>
       <div class="tablewrap">
         <table>
-          <thead><tr><th>Point</th><th>Code</th><th>Est</th><th>Nord</th><th>Altitude</th><th>Préc. H</th><th>Préc. V</th><th></th></tr></thead>
+          <thead><tr><th>Point</th><th>Code</th><th>Est</th><th>Nord</th><th>Altitude</th><th>Préc. H</th><th>Préc. V</th><th id="ptJobTh" style="display:none">Travail</th><th></th></tr></thead>
           <tbody id="ptBody"></tbody>
         </table>
       </div>
