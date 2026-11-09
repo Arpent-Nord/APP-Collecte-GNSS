@@ -121,18 +121,17 @@ Onglet **Calculs** : taper le numéro (ou toucher le bouton). Les numéros repre
 
 | N° | Commande | Contenu |
 |---|---|---|
-| 1 | Enregistre | Inscrire un point (E, N, Z, code) ; importer un fichier (CSV Emlid Flow 360, P,N,E,Z,D ou P,E,N,Z,D) |
-| 2 | Liste | Séquence (1-10, 15…), mesurés ou théoriques, code, levé ; comparaison à une ligne (chaînage, écart, dZ) ; export CSV ; copie vers un autre levé |
-| 3 | Loc Az | Créer un point : azimut-distance, angle-distance (station + référence arrière), intersections azimut-azimut, distance-distance, azimut-distance ; dénivelé ou pente |
+| 1 | Enregistre | Inscrire un point (E, N, Z, code) ; importer un fichier (CSV Emlid Flow 360, P,N,E,Z,D ou P,E,N,Z,D) ; récupérer des points d'un autre levé (ex. matin vers après-midi, par 2 · Liste) |
+| 2 | Liste | Séquence (1-10, 15…), mesurés ou théoriques, code, levé (en cours, un autre, tous) ; comparaison à une ligne (chaînage, écart, dZ) ; export CSV ; copie vers le levé en cours ou un autre (noms déjà présents ignorés) |
+| 3 | Création de points | Commandes de la boîte à outils (mêmes règles que Validation de levé) : **2P** milieu, **2PD** point à une distance sur l'alignement (depuis 1 ou 2, déport), **2D** intersection de 2 distances (− = gauche), **3PP** perpendiculaire, **4P** intersection de 2 droites, **3C** centre du cercle (rayon), **RECT** 4e coin ; et azimut-distance, angle-distance, intersections azimut-azimut et azimut-distance |
 | 4 | Inverse | Entre 2 points, en suite 1-2-3-4, en rayonnement 1-2, 1-3, 1-4 ; azimut, distance grille et sol, dZ, pente |
 | 7 | Superficie | Polygone fermé : m² grille et sol, ha, pi², acres, périmètre |
-| 15 | Prolonge ligne | Point sur une ligne à une distance avec déport (2PD) ; perpendiculaire d'un point (3PP) |
 
 - Angles en **DD.MMSS** (45.1230 = 45°12′30″), **degrés décimaux** ou **grades** (400 gon) ; azimuts du nord, sens horaire. Angle + = horaire, − = antihoraire ; déport + = à droite de l'axe, − = à gauche (bouton ± pour le signe).
-- **Distances grille ou sol** : facteur combiné = facteur d'échelle MTM (identique à PROJ) × facteur d'altitude R / (R + h). Par défaut, **facteur du secteur de travail** comme Menarp : moyenne des facteurs d'échelle des points du levé × facteur de l'altitude moyenne (h = altitude + N). Aussi : au lieu de chaque calcul, ou inscrit.
+- **Distances grille ou sol** : facteur combiné = facteur d'échelle MTM (identique à PROJ) × facteur d'altitude R / (R + h). Par défaut, **facteur du secteur de travail** comme Menarp : moyenne des facteurs d'échelle des points du levé × facteur de l'altitude moyenne (h = altitude + N). Aussi : au lieu de chaque calcul, inscrit, ou 1 (aucune correction).
 - **Code des points calculés** : 299 PCT (calculé sur le terrain) par défaut ; 300 PCB, 301 PCC ou autre code au choix.
 - Rayonnement (option par défaut) : on reste au point de départ ; sinon le nouveau point devient la station (cheminement).
-- Les points calculés, inscrits et importés sont **théoriques** (en italique) ; le CSV porte `Type_point` et `Formule` (ex. « Loc Az de S1, Az 45°00′00.0″, D 10.000 »).
+- Les points calculés, inscrits et importés sont **théoriques** (en italique) ; le CSV porte `Type_point` et `Formule` (ex. « 2PD A, B, D 10.000 depuis B » ou « Az-dist de S1, Az 45°00′00.0″, D 10.000 »).
 
 ## Corrections par radio (LoRa, UHF) ou modem du récepteur
 

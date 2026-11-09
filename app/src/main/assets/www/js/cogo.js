@@ -1,7 +1,8 @@
 /* Collecte GNSS — Arpent-Nord
  * cogo.js : calculs d'arpentage dans le plan du système de travail (Est, Nord, Z).
- * Raccourcis repris de Menarp (Roger Perreault, Développement Darp) : 1 Enregistre, 2 Liste, 3 Loc Az (création de points),
- * 4 Inverse, 7 Superficie, 15 Prolonge ligne. Fonctions pures, sans interface : testées par tests/core.test.js.
+ * Raccourcis repris de Menarp (Roger Perreault, Développement Darp) : 1 Enregistre, 2 Liste, 3 Création de points,
+ * 4 Inverse, 7 Superficie. La création de points reprend les commandes de description de la boîte à outils
+ * (2P, 2PD, 2D, 3PP, 4P, 3C, RECT — mêmes règles que Validation de levé) et les calculs par azimut, angle et distance. Fonctions pures, sans interface : testées par tests/core.test.js.
  *
  * Conventions : azimut compté du nord, sens horaire, de 0 à 360°. Distances en mètres.
  * Les distances « grille » sont celles du plan MTM ; les distances « sol » tiennent compte du facteur d'échelle
@@ -164,6 +165,43 @@
     return f;
   }
 
+  // ---------- Commandes de description (Validation de levé) ----------
+  function avgZ(pts) { var s = 0, n = 0; pts.forEach(function (p) { if (hasZ(p)) { s += p.z; n++; } }); return n === pts.length && n ? s / n : null; }
+  /* 2P : milieu de 1-2 ; Z = moyenne. */
+  function midpoint(a, b) { return { e: (a.e + b.e) / 2, n: (a.n + b.n) / 2, z: avgZ([a, b]) }; }
+  /* 2PD : point sur l'alignement 1-2 à la distance d du point 1 (from = 1) ou du point 2 (from = 2, au-delà de 2 si d > 0) ;
+   * déport + à droite ; Z selon la pente de 1-2. */
+  function pointAtDistance(a, b, d, from, offset) {
+    var L = hdist(a, b); if (L === 0) return null;
+    return alongLine(a, b, (from === 2 ? L : 0) + d, offset || 0);
+  }
+  /* 2D : intersection de deux distances ; une distance négative (ou side = -1) = à gauche de 1 -> 2. */
+  function twoDistances(a, b, d1, d2, side) {
+    if (side === undefined || side === null) side = (d1 < 0 || d2 < 0) ? -1 : 1;
+    var x = intersectDistDist(a, Math.abs(d1), b, Math.abs(d2)); if (!x) return null;
+    var p = side < 0 ? x.left : x.right; p.z = null; p.side = side; return p;
+  }
+  /* 4P : intersection des droites 1-2 et 3-4. */
+  function intersectLines(p1, p2, p3, p4) {
+    var d = (p1.e - p2.e) * (p3.n - p4.n) - (p1.n - p2.n) * (p3.e - p4.e);
+    if (Math.abs(d) < 1e-9) return null;
+    var t = ((p1.e - p3.e) * (p3.n - p4.n) - (p1.n - p3.n) * (p3.e - p4.e)) / d;
+    return { e: p1.e + t * (p2.e - p1.e), n: p1.n + t * (p2.n - p1.n), z: null };
+  }
+  /* 3C : centre du cercle par 3 points, avec le rayon. */
+  function circleCenter(a, b, c) {
+    var d = 2 * (a.e * (b.n - c.n) + b.e * (c.n - a.n) + c.e * (a.n - b.n));
+    if (Math.abs(d) < 1e-9) return null;
+    var a2 = a.e * a.e + a.n * a.n, b2 = b.e * b.e + b.n * b.n, c2 = c.e * c.e + c.n * c.n;
+    var x = (a2 * (b.n - c.n) + b2 * (c.n - a.n) + c2 * (a.n - b.n)) / d;
+    var y = (a2 * (c.e - b.e) + b2 * (a.e - c.e) + c2 * (b.e - a.e)) / d;
+    return { e: x, n: y, z: null, r: Math.hypot(a.e - x, a.n - y) };
+  }
+  /* RECT : 4e coin d'un rectangle (3 points, coin au milieu) ; Z = ZA + ZC − ZB. */
+  function rectCorner(a, b, c) {
+    return { e: a.e + c.e - b.e, n: a.n + c.n - b.n, z: hasZ(a) && hasZ(b) && hasZ(c) ? a.z + c.z - b.z : null };
+  }
+
   // ---------- 7 Superficie ----------
   /* Polygone fermé automatiquement. Superficie (formule de l'arpenteur), périmètre. */
   function area(pts) {
@@ -227,10 +265,9 @@
   var COMMANDS = [
     { n: 1, id: 'enregistre', label: 'Enregistre', desc: 'Inscrire un point, importer un fichier de points' },
     { n: 2, id: 'liste', label: 'Liste', desc: 'Lister, filtrer, comparer à une ligne, exporter' },
-    { n: 3, id: 'locaz', label: 'Loc Az', desc: 'Créer un point : azimut, angle, intersections' },
+    { n: 3, id: 'creation', label: 'Création de points', desc: '2P, 2PD, 2D, 3PP, 4P, 3C, RECT, azimut, angle et distance, intersections' },
     { n: 4, id: 'inverse', label: 'Inverse', desc: 'Entre 2 points, en suite ou en rayonnement' },
-    { n: 7, id: 'superficie', label: 'Superficie', desc: 'Superficie et périmètre d’un polygone' },
-    { n: 15, id: 'prolonge', label: 'Prolonge ligne', desc: 'Point sur une ligne (2PD), perpendiculaire (3PP)' }
+    { n: 7, id: 'superficie', label: 'Superficie', desc: 'Superficie et périmètre d’un polygone' }
   ];
 
   var api = {
@@ -238,6 +275,8 @@
     azimuth: azimuth, hdist: hdist, inverse: inverse, inverseSeries: inverseSeries,
     locAz: locAz, locAngle: locAngle, intersectAzAz: intersectAzAz, intersectDistDist: intersectDistDist, intersectAzDist: intersectAzDist,
     stationOffset: stationOffset, alongLine: alongLine, perpendicular: perpendicular, area: area,
+    midpoint: midpoint, pointAtDistance: pointAtDistance, twoDistances: twoDistances, intersectLines: intersectLines,
+    circleCenter: circleCenter, rectCorner: rectCorner,
     mtmScale: mtmScale, elevationFactor: elevationFactor, combinedFactor: combinedFactor, parseSequence: parseSequence,
     COMMANDS: COMMANDS
   };

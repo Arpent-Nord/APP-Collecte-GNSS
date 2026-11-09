@@ -81,6 +81,7 @@
   /* Facteur combiné à utiliser : secteur (défaut), au lieu du calcul, ou inscrit. */
   function factorFor(pts) {
     var mode = $('cgFact').value;
+    if (mode === 'un') return 1;
     if (mode === 'manuel') { var v = num('cgFactVal'); if (!isNaN(v) && v > 0.99 && v < 1.01) return v; }
     if (mode === 'secteur') { var s = sector(); if (s) return s.cf; }
     return factorAt(pts);
@@ -90,12 +91,13 @@
     $('cgFactValWrap').style.display = $('cgFact').value === 'manuel' ? '' : 'none';
     $('cgCodeOtherWrap').style.display = $('cgCodeSel').value === 'autre' ? '' : 'none';
     var info = $('cgFactInfo'), mode = $('cgFact').value, s = sector();
-    if (mode === 'manuel') info.textContent = 'Facteur combiné inscrit : ' + (isNaN(num('cgFactVal')) ? '(à inscrire)' : num('cgFactVal').toFixed(8)) + '.';
+    if (mode === 'un') info.textContent = 'Facteur combiné = 1 : aucune correction, distance sol = distance grille.';
+    else if (mode === 'manuel') info.textContent = 'Facteur combiné inscrit : ' + (isNaN(num('cgFactVal')) ? '(à inscrire)' : num('cgFactVal').toFixed(8)) + '.';
     else if (mode === 'secteur' && s) info.textContent = 'Facteur combiné du secteur : ' + s.cf.toFixed(8) + ' (échelle moyenne ' + s.k.toFixed(8) +
       ' × altitude ' + s.ef.toFixed(8) + ', h moyenne ' + s.hMean.toFixed(1) + ' m, ' + s.n + ' point(s) du levé).';
     else info.textContent = 'Facteur combiné calculé au lieu de chaque calcul' + (mode === 'secteur' ? ' (aucun point dans le levé en cours pour le secteur)' : '') + '.';
     var code = computedCode();
-    ['c3Code', 'c15Code'].forEach(function (id) { if (!$(id).value.trim() || $(id).value === lastCode) $(id).value = code; });
+    ['c3Code'].forEach(function (id) { if (!$(id).value.trim() || $(id).value === lastCode) $(id).value = code; });
     lastCode = code;
   }
   var lastCode = '';
@@ -127,7 +129,7 @@
   function dl(id, rows) { $(id).innerHTML = rows.map(function (r) { return '<dt>' + r[0] + '</dt><dd>' + r[1] + '</dd>'; }).join(''); }
 
   /* Bouton ± à côté des champs qui acceptent un signe (le clavier numérique d'Android n'a pas toujours le « − »). */
-  ['c3Ang', 'c3Dz', 'c3Pente', 'c15D', 'c15O'].forEach(function (id) {
+  ['c3Ang', 'c3D1', 'c3D2', 'c3Off', 'c3Dz', 'c3Pente'].forEach(function (id) {
     var inp = $(id), wrap = document.createElement('div'), b = document.createElement('button');
     wrap.className = 'inline'; wrap.style.marginTop = '4px';
     b.type = 'button'; b.className = 'btn'; b.textContent = '±'; b.title = 'Changer le signe';
@@ -144,11 +146,12 @@
     var c = Cogo.COMMANDS.filter(function (x) { return x.n === +n; })[0];
     document.querySelectorAll('.cgpane').forEach(function (p) { p.classList.toggle('on', c && +p.dataset.cmd === c.n); });
     document.querySelectorAll('#cgCmds .chip').forEach(function (b) { b.classList.toggle('sel', c && +b.dataset.n === c.n); });
-    $('cgTitle').textContent = c ? c.n + ' · ' + c.label + ' — ' + c.desc : 'Commande inconnue : 1, 2, 3, 4, 7 ou 15.';
+    $('cgTitle').textContent = c ? c.n + ' · ' + c.label + ' — ' + c.desc : 'Commande inconnue : 1, 2, 3, 4 ou 7.';
+    if (c && c.n === 2) fillLeves();
     if (!c) return;
     current = c.n; S.cgLast = c.n; Ctx.save(); renderSettings();
     // Nom proposé : prochain numéro libre (refait si le nom affiché est déjà pris).
-    var nameId = { 1: 'c1Nom', 3: 'c3Nom', 15: 'c15Nom' }[c.n];
+    var nameId = { 1: 'c1Nom', 3: 'c3Nom' }[c.n];
     if (nameId) {
       var v = $(nameId).value.trim();
       if (!v || findPoint(v) || v === suggested[nameId]) { suggested[nameId] = Ctx.nextName(); $(nameId).value = suggested[nameId]; }
@@ -232,17 +235,17 @@
   var lastList = [];
   function listPoints() {
     var pts = Ctx.points(), seq = Cogo.parseSequence($('c2Seq').value), type = $('c2Type').value;
-    var code = $('c2Code').value.trim().toLowerCase(), leve = Ctx.leve(), onlyLeve = $('c2Leve').checked;
+    var code = $('c2Code').value.trim().toLowerCase(), sel = $('c2Leve').value, leve = sel === '*cur' ? Ctx.leve() : sel;
+    var inLeve = function (p) { return sel === '*all' || (p.leve || '') === leve; };
     var res = [];
     if (seq.length) {
-      seq.forEach(function (n) { var p = findPoint(n); if (p) res.push(p.src); });
-    } else res = pts.slice();
+      seq.forEach(function (n) { for (var i = pts.length - 1; i >= 0; i--) if (pts[i].nom === n && inLeve(pts[i])) { res.push(pts[i]); break; } });
+    } else res = pts.filter(inLeve);
     res = res.filter(function (p) {
       var theo = p.type && p.type !== 'mesure';
       if (type === 'mesure' && theo) return false;
       if (type === 'theo' && !theo) return false;
       if (code && String(p.code || '').toLowerCase().indexOf(code) < 0) return false;
-      if (onlyLeve && leve && p.leve !== leve) return false;
       return true;
     });
     return res;
@@ -270,77 +273,129 @@
     var name = (Ctx.leve() || 'liste').replace(/[^\w#-]+/g, '_') + '_liste.csv';
     Ctx.saveText(name, 'text/csv', Survey.toCsv(lastList));
   });
+  /* Liste des levés présents sur l'appareil. */
+  function fillLeves() {
+    var sel = $('c2Leve'), cur = sel.value || '*cur', seen = {}, opts = [['*cur', 'Levé en cours (' + (Ctx.leve() || 'sans nom') + ')'], ['*all', 'Tous les levés']];
+    Ctx.points().forEach(function (p) { var l = p.leve || ''; if (!seen[l] && l !== Ctx.leve()) { seen[l] = 1; opts.push([l, l || '(sans nom)']); } });
+    sel.innerHTML = ''; opts.forEach(function (o) { var x = document.createElement('option'); x.value = o[0]; x.textContent = o[1]; sel.appendChild(x); });
+    sel.value = opts.some(function (o) { return o[0] === cur; }) ? cur : '*cur';
+  }
+  $('c1FromLeve').addEventListener('click', function () {
+    $('cgN').value = 2; show(2);
+    var sel = $('c2Leve'); if (sel.options.length > 2) sel.selectedIndex = 2;
+    $('c2Dest').value = ''; $('c2CopyBox').open = true; $('c2Seq').focus();
+  });
   $('c2Copy').addEventListener('click', function () {
-    var dest = $('c2Dest').value.trim().toUpperCase();
+    var dest = ($('c2Dest').value.trim() || Ctx.leve()).toUpperCase();
     if (!lastList.length || !dest) { msg('c2Msg', 'Lister les points et indiquer le levé de destination.', 'warn'); return; }
-    var copies = lastList.map(function (p) {
+    var inDest = {}; Ctx.points().forEach(function (p) { if ((p.leve || '') === dest) inDest[p.nom] = 1; });
+    var skipped = 0;
+    var copies = lastList.filter(function (p) { if (inDest[p.nom]) { skipped++; return false; } return true; }).map(function (p) {
       var c = JSON.parse(JSON.stringify(p)); c.leve = dest;
       if (c.type === 'mesure' || !c.type) { c.type = 'importe'; c.formule = 'Copié du levé ' + (p.leve || '(sans nom)'); }
       return c;
     });
-    Ctx.addPoints(copies);
-    msg('c2Msg', copies.length + ' point(s) copié(s) vers le levé ' + dest + ' (comme points théoriques).', 'ok');
+    if (copies.length) Ctx.addPoints(copies);
+    msg('c2Msg', copies.length + ' point(s) copié(s) vers le levé ' + dest + ' (comme points théoriques)' + (skipped ? ', ' + skipped + ' ignoré(s) : déjà dans ce levé' : '') + '.', copies.length ? 'ok' : 'warn');
+    fillLeves();
   });
 
-  // ---------- 3 Loc Az ----------
-  var FIELDS3 = {
-    azdist: ['A', 'azA', 'dA', 'dz', 'pente'], angdist: ['A', 'R', 'ang', 'dA', 'dz', 'pente'],
-    azaz: ['A', 'azA', 'B', 'azB'], distdist: ['A', 'dA', 'B', 'dB', 'sol'], azdistx: ['A', 'azA', 'B', 'dB', 'sol']
+  // ---------- 3 Création de points ----------
+  /* Champs et libellés par méthode. Les commandes 2P à RECT suivent les règles de Validation de levé. */
+  var M3 = {
+    '2P':   { f: ['P1', 'P2'], L: ['1er point', '2e point'], help: 'Point milieu de 1-2. Z : moyenne des deux points.' },
+    '2PD':  { f: ['P1', 'P2', 'from', 'd1', 'off'], L: ['Point 1', 'Point 2'], d1: 'Distance sur l’alignement 1-2',
+              help: 'Distance depuis le point 1, ou depuis le point 2 pour prolonger au-delà ; négative = vers l’arrière. Z : pente de 1-2.' },
+    '2D':   { f: ['P1', 'P2', 'd1', 'd2', 'sol'], L: ['Point 1', 'Point 2'], d1: 'Distance depuis le point 1',
+              help: 'Intersection de deux distances. Côté par rapport à 1 → 2 : droite ou gauche (une distance négative = gauche).' },
+    '3PP':  { f: ['P1', 'P2', 'P3'], L: ['1er point du segment', '2e point du segment', 'Point à projeter'],
+              help: 'Pied de la perpendiculaire du point 3 sur le segment 1-2. Z interpolé sur 1-2.' },
+    '4P':   { f: ['P1', 'P2', 'P3', 'P4'], L: ['Point 1 (droite 1-2)', 'Point 2', 'Point 3 (droite 3-4)', 'Point 4'], help: 'Intersection des droites 1-2 et 3-4.' },
+    '3C':   { f: ['P1', 'P2', 'P3'], L: ['1er point du cercle', '2e point', '3e point'], help: 'Centre du cercle passant par les 3 points ; le rayon est affiché.' },
+    'RECT': { f: ['P1', 'P2', 'P3'], L: ['Point A', 'Point B (coin du milieu)', 'Point C'], help: '4e coin du rectangle A-B-C (B au coin). Z = ZA + ZC − ZB.' },
+    azdist: { f: ['P1', 'az1', 'd1', 'dz', 'pente'], L: ['Point de départ'], d1: 'Distance', az1: 'Azimut',
+              help: 'Point à un azimut et une distance d’un point connu.' },
+    angdist:{ f: ['P1', 'P2', 'ang', 'd1', 'dz', 'pente'], L: ['Station', 'Référence arrière'], d1: 'Distance',
+              help: 'Angle mesuré depuis la référence arrière : + horaire, − antihoraire.' },
+    azaz:   { f: ['P1', 'az1', 'P2', 'az2'], L: ['Point 1', 'Point 2'], az1: 'Azimut depuis le point 1', help: 'Intersection de deux azimuts.' },
+    azdistx:{ f: ['P1', 'az1', 'P2', 'd2', 'sol'], L: ['Point 1', 'Point 2'], az1: 'Azimut depuis le point 1',
+              help: 'Intersection d’un azimut (depuis 1) et d’une distance (depuis 2) : jusqu’à deux solutions.' }
   };
   var pending3 = null;
   function mode3() {
-    var m = $('c3Mode').value, f = FIELDS3[m];
-    document.querySelectorAll('[data-cmd="3"] [data-f]').forEach(function (l) { l.style.display = f.indexOf(l.dataset.f) >= 0 ? '' : 'none'; });
+    var m = $('c3Mode').value, cfg = M3[m];
+    document.querySelectorAll('[data-cmd="3"] [data-f]').forEach(function (l) { l.style.display = cfg.f.indexOf(l.dataset.f) >= 0 ? '' : 'none'; });
+    for (var k = 1; k <= 4; k++) $('c3L' + k).textContent = cfg.L[k - 1] || ('Point ' + k);
+    $('c3LD1').textContent = cfg.d1 || 'Distance'; $('c3LAz1').textContent = cfg.az1 || 'Azimut depuis le point 1';
     var sol = $('c3Sol'); sol.innerHTML = '';
-    (m === 'distdist' ? [['left', 'À gauche de A → B'], ['right', 'À droite de A → B']] : [['1', '1re rencontre le long de l’azimut'], ['2', '2e rencontre']])
+    (m === 'azdistx' ? [['1', '1re rencontre le long de l’azimut'], ['2', '2e rencontre']] : [['1', 'À droite de 1 → 2'], ['-1', 'À gauche de 1 → 2']])
       .forEach(function (o) { var x = document.createElement('option'); x.value = o[0]; x.textContent = o[1]; sol.appendChild(x); });
+    $('c3Help').textContent = cfg.help;
     pending3 = null; $('c3Save').disabled = true; $('c3Res').innerHTML = '';
     S.c3Mode = m; Ctx.save();
   }
-  if (S.c3Mode) $('c3Mode').value = S.c3Mode;
+  if (S.c3Mode && M3[S.c3Mode]) $('c3Mode').value = S.c3Mode;
   $('c3Mode').addEventListener('change', mode3); mode3();
-  ['c3A', 'c3R', 'c3AzA', 'c3Ang', 'c3DA', 'c3B', 'c3AzB', 'c3DB', 'c3Sol', 'c3Dz', 'c3Pente'].forEach(function (id) {
+  ['c3P1', 'c3P2', 'c3P3', 'c3P4', 'c3From', 'c3Az1', 'c3Ang', 'c3D1', 'c3Az2', 'c3D2', 'c3Off', 'c3Sol', 'c3Dz', 'c3Pente'].forEach(function (id) {
     $(id).addEventListener('input', function () { pending3 = null; $('c3Save').disabled = true; });
+    $(id).addEventListener('change', function () { pending3 = null; $('c3Save').disabled = true; });
   });
+  function req(v, what) { if (isNaN(v)) throw new Error(what + ' requis'); return v; }
   function calc3() {
-    var m = $('c3Mode').value, A, B, R, c, formule, opt = {};
-    var dz = num('c3Dz'), pe = num('c3Pente');
+    var m = $('c3Mode').value, cfg = M3[m], names = [];
+    cfg.f.forEach(function (f) { if (/^P\d$/.test(f)) names.push($('c3' + f).value); });
+    var P = need(names), A = P[0], B = P[1], c = null, formule, extra = [], opt = {};
+    var dz = num('c3Dz'), pe = num('c3Pente'), sd = $('cgDist').value === 'sol' ? ' sol' : '';
     if (!isNaN(dz)) opt.dz = dz; else if (!isNaN(pe)) opt.slopePct = pe;
-    if (m === 'azdist') {
-      A = need([$('c3A').value])[0];
-      var az = ang('c3AzA'), d = num('c3DA'); if (isNaN(az) || isNaN(d)) throw new Error('Azimut et distance requis');
-      var dg = toGrid(d, [A]); c = Cogo.locAz(A, az, dg, opt);
-      formule = 'Loc Az de ' + A.name + ', Az ' + fmtAz(az) + ', D ' + d.toFixed(3) + ($('cgDist').value === 'sol' ? ' sol' : '');
-    } else if (m === 'angdist') {
-      var two = need([$('c3A').value, $('c3R').value]); A = two[0]; R = two[1];
-      var an = ang('c3Ang'), d2 = num('c3DA'); if (isNaN(an) || isNaN(d2)) throw new Error('Angle et distance requis');
-      c = Cogo.locAngle(A, R, an, toGrid(d2, [A]), opt);
-      formule = 'Loc Angle de ' + A.name + ' (réf. ' + R.name + '), Ang ' + fmtAz(an) + ', D ' + d2.toFixed(3) + ($('cgDist').value === 'sol' ? ' sol' : '');
-    } else if (m === 'azaz') {
-      var ab = need([$('c3A').value, $('c3B').value]); A = ab[0]; B = ab[1];
-      var a1 = ang('c3AzA'), a2 = ang('c3AzB'); if (isNaN(a1) || isNaN(a2)) throw new Error('Deux azimuts requis');
-      c = Cogo.intersectAzAz(A, a1, B, a2); if (!c) throw new Error('Azimuts parallèles : aucune intersection');
-      c.z = null; formule = 'Intersection Az ' + A.name + ' ' + fmtAz(a1) + ' / Az ' + B.name + ' ' + fmtAz(a2);
-    } else if (m === 'distdist') {
-      var ab2 = need([$('c3A').value, $('c3B').value]); A = ab2[0]; B = ab2[1];
-      var r1 = num('c3DA'), r2 = num('c3DB'); if (isNaN(r1) || isNaN(r2)) throw new Error('Deux distances requises');
-      var x = Cogo.intersectDistDist(A, toGrid(r1, [A, B]), B, toGrid(r2, [A, B]));
-      if (!x) throw new Error('Les deux distances ne se rencontrent pas');
-      c = x[$('c3Sol').value]; c.z = null;
-      formule = 'Intersection D ' + A.name + ' ' + r1.toFixed(3) + ' / D ' + B.name + ' ' + r2.toFixed(3) + ' (' + ($('c3Sol').value === 'left' ? 'gauche' : 'droite') + ')';
-    } else {
-      var ab3 = need([$('c3A').value, $('c3B').value]); A = ab3[0]; B = ab3[1];
-      var a3 = ang('c3AzA'), r3 = num('c3DB'); if (isNaN(a3) || isNaN(r3)) throw new Error('Azimut et distance requis');
-      var sols = Cogo.intersectAzDist(A, a3, B, toGrid(r3, [A, B]));
-      if (!sols.length) throw new Error('L’azimut ne rencontre pas la distance');
-      c = sols[Math.min(sols.length, +$('c3Sol').value) - 1]; c.z = null;
-      formule = 'Intersection Az ' + A.name + ' ' + fmtAz(a3) + ' / D ' + B.name + ' ' + r3.toFixed(3) + ' (solution ' + $('c3Sol').value + ' sur ' + sols.length + ')';
+    var list = P.map(function (p) { return p.name; }).join(', ');
+    switch (m) {
+      case '2P': c = Cogo.midpoint(A, B); formule = '2P de ' + list; break;
+      case '2PD': {
+        var d = req(num('c3D1'), 'Distance'), off = num('c3Off'), from = +$('c3From').value;
+        if (Cogo.hdist(A, B) === 0) throw new Error('Les deux points sont confondus');
+        c = Cogo.pointAtDistance(A, B, toGrid(d, P), from, isNaN(off) ? 0 : toGrid(off, P));
+        formule = '2PD ' + list + ', D ' + d.toFixed(3) + sd + ' depuis ' + (from === 2 ? B.name : A.name) + (off ? ', déport ' + off.toFixed(3) : ''); break;
+      }
+      case '2D': {
+        var d1 = req(num('c3D1'), 'Distance depuis le point 1'), d2 = req(num('c3D2'), 'Distance depuis le point 2');
+        var side = (d1 < 0 || d2 < 0) ? -1 : +$('c3Sol').value;
+        c = Cogo.twoDistances(A, B, toGrid(Math.abs(d1), P), toGrid(Math.abs(d2), P), side);
+        if (!c) throw new Error('Les distances ' + Math.abs(d1).toFixed(3) + ' et ' + Math.abs(d2).toFixed(3) + ' ne se croisent pas (base ' + Cogo.hdist(A, B).toFixed(3) + ' m)');
+        formule = '2D ' + list + ', D ' + Math.abs(d1).toFixed(3) + ' / ' + Math.abs(d2).toFixed(3) + sd + ' (' + (side < 0 ? 'gauche' : 'droite') + ')'; break;
+      }
+      case '3PP': c = Cogo.perpendicular(A, B, P[2]); if (!c) throw new Error('Les deux premiers points sont confondus');
+        extra.push(['Chaînage depuis ' + esc(A.name), f3(c.chainage) + ' m'], ['Écart de ' + esc(P[2].name), (c.offset >= 0 ? '+' : '') + f3(c.offset) + ' m (+ à droite)']);
+        formule = '3PP ' + list; break;
+      case '4P': c = Cogo.intersectLines(P[0], P[1], P[2], P[3]); if (!c) throw new Error('Les droites 1-2 et 3-4 sont parallèles'); formule = '4P ' + list; break;
+      case '3C': c = Cogo.circleCenter(P[0], P[1], P[2]); if (!c) throw new Error('Les 3 points sont alignés');
+        extra.push(['Rayon', f3(c.r) + ' m grille · ' + f3(c.r / factorFor(P)) + ' m sol']); formule = '3C ' + list + ', R ' + c.r.toFixed(3); break;
+      case 'RECT': c = Cogo.rectCorner(P[0], P[1], P[2]); formule = 'RECT ' + list; break;
+      case 'azdist': {
+        var az = req(ang('c3Az1'), 'Azimut'), dd = req(num('c3D1'), 'Distance');
+        c = Cogo.locAz(A, az, toGrid(dd, P), opt); formule = 'Az-dist de ' + A.name + ', Az ' + fmtAz(az) + ', D ' + dd.toFixed(3) + sd; break;
+      }
+      case 'angdist': {
+        var an = req(ang('c3Ang'), 'Angle'), d3 = req(num('c3D1'), 'Distance');
+        c = Cogo.locAngle(A, B, an, toGrid(d3, [A]), opt);
+        formule = 'Angle-dist de ' + A.name + ' (réf. ' + B.name + '), Ang ' + fmtAz(an) + ', D ' + d3.toFixed(3) + sd; break;
+      }
+      case 'azaz': {
+        var a1 = req(ang('c3Az1'), 'Azimut depuis le point 1'), a2 = req(ang('c3Az2'), 'Azimut depuis le point 2');
+        c = Cogo.intersectAzAz(A, a1, B, a2); if (!c) throw new Error('Azimuts parallèles : aucune intersection');
+        c.z = null; formule = 'Intersection Az ' + A.name + ' ' + fmtAz(a1) + ' / Az ' + B.name + ' ' + fmtAz(a2); break;
+      }
+      case 'azdistx': {
+        var a3 = req(ang('c3Az1'), 'Azimut depuis le point 1'), r3 = req(num('c3D2'), 'Distance depuis le point 2');
+        var sols = Cogo.intersectAzDist(A, a3, B, toGrid(r3, P));
+        if (!sols.length) throw new Error('L’azimut ne rencontre pas la distance');
+        c = sols[Math.min(sols.length, +$('c3Sol').value || 1) - 1]; c.z = null;
+        formule = 'Intersection Az ' + A.name + ' ' + fmtAz(a3) + ' / D ' + B.name + ' ' + r3.toFixed(3) + sd + ' (solution ' + Math.min(sols.length, +$('c3Sol').value || 1) + ' sur ' + sols.length + ')'; break;
+      }
     }
-    var inv = Cogo.inverse(A, c), k = factorFor([A, c]);
-    dl('c3Res', [['Est', f3(c.e)], ['Nord', f3(c.n)], ['Altitude', f3(c.z)],
-      ['Depuis ' + esc(A.name), fmtAz(inv.az) + ' · ' + f3(inv.dist) + ' m grille · ' + f3(inv.dist / k) + ' m sol'],
-      ['Facteur combiné', k.toFixed(8)]]);
-    pending3 = { c: c, formule: formule, A: A };
+    var inv = Cogo.inverse(A, c), k = factorFor(P.concat([c]));
+    dl('c3Res', [['Est', f3(c.e)], ['Nord', f3(c.n)], ['Altitude', f3(c.z)]].concat(extra).concat([
+      ['Depuis ' + esc(A.name), fmtAz(inv.az) + ' · ' + f3(inv.dist) + ' m grille · ' + f3(inv.dist / k) + ' m sol']]));
+    pending3 = { c: c, formule: formule };
   }
   $('c3Calc').addEventListener('click', function () {
     try { calc3(); $('c3Save').disabled = false; msg('c3Msg', ''); }
@@ -348,12 +403,12 @@
   });
   $('c3Save').addEventListener('click', function () {
     if (!pending3) return;
-    var name = $('c3Nom').value.trim();
+    var name = $('c3Nom').value.trim(), m = $('c3Mode').value;
     if (saveNew('c3Nom', 'c3Code', pending3.c, pending3.formule, 'c3Msg')) {
       // Cheminement : sans « rester au point de départ », le nouveau point devient la station.
-      if (!$('cgStay').checked && ($('c3Mode').value === 'azdist' || $('c3Mode').value === 'angdist')) {
-        if ($('c3Mode').value === 'angdist') $('c3R').value = $('c3A').value;
-        $('c3A').value = name;
+      if (!$('cgStay').checked && (m === 'azdist' || m === 'angdist')) {
+        if (m === 'angdist') $('c3P2').value = $('c3P1').value;
+        $('c3P1').value = name;
       }
       pending3 = null; $('c3Save').disabled = true;
     }
@@ -393,32 +448,6 @@
         ['Sommets', pts.length + ' · ' + esc(pts.map(function (p) { return p.name; }).join(', '))]]);
       msg('c7Msg', '');
     } catch (e) { $('c7Res').innerHTML = ''; msg('c7Msg', e.message + '.', 'warn'); }
-  });
-
-  // ---------- 15 Prolonge ligne ----------
-  var pending15 = null;
-  $('c15Calc').addEventListener('click', function () {
-    try {
-      var ab = need([$('c15A').value, $('c15B').value]), A = ab[0], B = ab[1], c, formule;
-      if ($('c15P').value.trim()) {
-        var P = need([$('c15P').value])[0];
-        c = Cogo.perpendicular(A, B, P);
-        formule = 'Perpendiculaire de ' + P.name + ' sur ' + A.name + '-' + B.name + ' (3PP)';
-        dl('c15Res', [['Est', f3(c.e)], ['Nord', f3(c.n)], ['Altitude (sur la ligne)', f3(c.z)],
-          ['Chaînage depuis ' + esc(A.name), f3(c.chainage) + ' m'], ['Écart de ' + esc(P.name), (c.offset >= 0 ? '+' : '') + f3(c.offset) + ' m (+ à droite)']]);
-      } else {
-        var d = num('c15D'), o = num('c15O'); if (isNaN(d)) throw new Error('Distance requise');
-        if (isNaN(o)) o = 0;
-        c = Cogo.alongLine(A, B, toGrid(d, [A, B]), toGrid(o, [A, B]));
-        formule = 'Prolonge ' + A.name + '-' + B.name + ', D ' + d.toFixed(3) + (o ? ', déport ' + o.toFixed(3) : '') + ' (2PD)';
-        dl('c15Res', [['Est', f3(c.e)], ['Nord', f3(c.n)], ['Altitude (pente de la ligne)', f3(c.z)],
-          ['Longueur ' + esc(A.name) + '-' + esc(B.name), f3(Cogo.hdist(A, B)) + ' m grille']]);
-      }
-      pending15 = { c: c, formule: formule }; $('c15Save').disabled = false; msg('c15Msg', '');
-    } catch (e) { pending15 = null; $('c15Save').disabled = true; $('c15Res').innerHTML = ''; msg('c15Msg', e.message + '.', 'warn'); }
-  });
-  $('c15Save').addEventListener('click', function () {
-    if (pending15 && saveNew('c15Nom', 'c15Code', pending15.c, pending15.formule, 'c15Msg')) { pending15 = null; $('c15Save').disabled = true; }
   });
 
   window.CogoUi = { parsePointFile: parsePointFile };

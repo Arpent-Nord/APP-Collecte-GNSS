@@ -433,6 +433,26 @@ test('15 Prolonge ligne (2PD), perpendiculaire (3PP), chaînage-écart d’un po
   near(f.e, 0, 1e-9); near(f.n, 55, 1e-9); near(f.offset, 7, 1e-9);
 });
 
+test('commandes de description 2P, 2PD, 2D, 3PP, 4P, 3C, RECT (règles de Validation de levé)', () => {
+  const A = { e: 0, n: 0, z: 10 }, B = { e: 0, n: 100, z: 20 };
+  const m = Cogo.midpoint(A, B); near(m.n, 50, 1e-12); near(m.z, 15, 1e-12);
+  const p1 = Cogo.pointAtDistance(A, B, 1, 1, 0); near(p1.n, 1, 1e-12); near(p1.z, 10.1, 1e-12);
+  const p2 = Cogo.pointAtDistance(A, B, 1, 2, 0); near(p2.n, 101, 1e-12); near(p2.z, 20.1, 1e-12);
+  const p3 = Cogo.pointAtDistance(A, B, -2, 2, 0.5); near(p3.n, 98, 1e-12); near(p3.e, 0.5, 1e-12);
+  const D = Cogo.twoDistances({ e: 0, n: 0 }, { e: 0, n: 8 }, 5, 5);
+  near(D.e, 3, 1e-9); near(D.n, 4, 1e-9);
+  near(Cogo.twoDistances({ e: 0, n: 0 }, { e: 0, n: 8 }, -5, 5).e, -3, 1e-9);
+  assert.strictEqual(Cogo.twoDistances({ e: 0, n: 0 }, { e: 0, n: 8 }, 1, 1), null);
+  const f = Cogo.perpendicular(A, B, { e: 4, n: 30 }); near(f.n, 30, 1e-12); near(f.z, 13, 1e-12);
+  const x = Cogo.intersectLines({ e: 0, n: 0 }, { e: 10, n: 10 }, { e: 0, n: 10 }, { e: 10, n: 0 });
+  near(x.e, 5, 1e-12); near(x.n, 5, 1e-12);
+  assert.strictEqual(Cogo.intersectLines({ e: 0, n: 0 }, { e: 1, n: 1 }, { e: 0, n: 1 }, { e: 1, n: 2 }), null);
+  const c = Cogo.circleCenter({ e: 5, n: 0 }, { e: 0, n: 5 }, { e: -5, n: 0 }); near(c.e, 0, 1e-12); near(c.n, 0, 1e-12); near(c.r, 5, 1e-12);
+  assert.strictEqual(Cogo.circleCenter({ e: 0, n: 0 }, { e: 1, n: 1 }, { e: 2, n: 2 }), null);
+  const r = Cogo.rectCorner({ e: 0, n: 10, z: 1 }, { e: 0, n: 0, z: 2 }, { e: 20, n: 0, z: 4 });
+  near(r.e, 20, 1e-12); near(r.n, 10, 1e-12); near(r.z, 3, 1e-12);
+});
+
 test('7 Superficie : carré, triangle, unités, sens de parcours indifférent', () => {
   const sq = Cogo.area([{ e: 0, n: 0 }, { e: 0, n: 100 }, { e: 100, n: 100 }, { e: 100, n: 0 }]);
   near(sq.area, 10000, 1e-9); near(sq.hectares, 1, 1e-12); near(sq.perimeter, 400, 1e-9); near(sq.sqft, 107639.104, 1e-3);

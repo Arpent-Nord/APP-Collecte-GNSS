@@ -436,7 +436,7 @@ details summary { cursor: pointer; font-weight: 600; }
             <select id="cgDist"><option value="grille">Grille (plan MTM)</option><option value="sol">Sol (facteur combiné appliqué)</option></select>
           </label>
           <label>Facteur combiné
-            <select id="cgFact"><option value="secteur">Secteur de travail (moyenne du levé)</option><option value="local">Au lieu de chaque calcul</option><option value="manuel">Inscrit</option></select>
+            <select id="cgFact"><option value="secteur">Secteur de travail (moyenne du levé)</option><option value="local">Au lieu de chaque calcul</option><option value="manuel">Inscrit</option><option value="un">1 (aucune correction : grille = sol)</option></select>
           </label>
           <label id="cgFactValWrap">Facteur inscrit<input id="cgFactVal" inputmode="decimal" placeholder="ex. 1.0000089"></label>
           <label>Code des points calculés
@@ -459,6 +459,9 @@ details summary { cursor: pointer; font-weight: 600; }
         <label>Altitude (facultative)<input id="c1Z" inputmode="decimal"></label>
       </div>
       <div class="row"><button class="btn primary" id="c1Save">Enregistrer le point</button></div>
+      <div class="msg" style="margin-top:12px">Récupérer des points d’un autre levé de l’appareil (ex. levé du matin vers le levé de l’après-midi) :
+        <button class="btn" id="c1FromLeve" type="button" style="margin-left:6px">Ouvrir 2 · Liste</button>
+        <span class="hint" style="display:block;margin-top:4px">Choisir le levé d’origine, lister, puis « Copier vers le levé en cours ».</span></div>
       <h2 style="margin-top:16px">Importer un fichier de points</h2>
       <div class="grid">
         <label>Ordre des colonnes (fichier sans en-tête)
@@ -485,44 +488,58 @@ details summary { cursor: pointer; font-weight: 600; }
           <select id="c2Type"><option value="">Tous</option><option value="mesure">Mesurés</option><option value="theo">Théoriques (calculés, inscrits, importés)</option></select>
         </label>
         <label>Code contient<input id="c2Code" autocomplete="off" placeholder="ex. 526"></label>
-        <label class="full check"><input type="checkbox" id="c2Leve" checked>Levé en cours seulement</label>
+        <label class="full">Levé<select id="c2Leve"></select></label>
         <label>Comparer à la ligne : de<input id="c2A" autocomplete="off" placeholder="point A"></label>
         <label>à<input id="c2B" autocomplete="off" placeholder="point B"></label>
       </div>
       <div class="row"><button class="btn primary" id="c2Go">Lister</button><button class="btn" id="c2Csv">Exporter la liste (CSV)</button></div>
       <div class="msg" id="c2Msg" style="display:none"></div>
       <div class="tablewrap"><table id="c2Table"></table></div>
-      <details style="margin-top:10px"><summary>Copier la liste vers un autre levé</summary>
-        <label style="margin-top:8px">Nom du levé de destination<input id="c2Dest" autocomplete="off" autocapitalize="characters"></label>
+      <details style="margin-top:10px" id="c2CopyBox"><summary>Copier la liste vers un levé</summary>
+        <label style="margin-top:8px">Levé de destination (par défaut : le levé en cours)<input id="c2Dest" autocomplete="off" autocapitalize="characters"></label>
         <div class="row"><button class="btn" id="c2Copy">Copier</button></div>
       </details>
     </div>
 
-    <!-- 3 Loc Az -->
+    <!-- 3 Création de points -->
     <div class="card cgpane" data-cmd="3">
-      <h2>3 · Loc Az — créer un point</h2>
+      <h2>3 · Création de points</h2>
       <label>Méthode
         <select id="c3Mode">
-          <option value="azdist">Azimut et distance</option>
-          <option value="angdist">Angle et distance (station, référence arrière)</option>
-          <option value="azaz">Intersection azimut-azimut</option>
-          <option value="distdist">Intersection distance-distance</option>
-          <option value="azdistx">Intersection azimut-distance</option>
+          <optgroup label="Commandes de la boîte à outils">
+            <option value="2P">2P · Point milieu</option>
+            <option value="2PD">2PD · Point à une distance sur l’alignement</option>
+            <option value="2D">2D · Intersection de 2 distances</option>
+            <option value="3PP">3PP · Perpendiculaire sur un segment</option>
+            <option value="4P">4P · Intersection de 2 droites</option>
+            <option value="3C">3C · Centre du cercle par 3 points</option>
+            <option value="RECT">RECT · 4e coin d’un rectangle</option>
+          </optgroup>
+          <optgroup label="Azimut, angle et distance">
+            <option value="azdist">Azimut et distance</option>
+            <option value="angdist">Angle et distance (station, référence arrière)</option>
+            <option value="azaz">Intersection azimut-azimut</option>
+            <option value="azdistx">Intersection azimut-distance</option>
+          </optgroup>
         </select>
       </label>
       <div class="grid" style="margin-top:10px">
-        <label data-f="A">Point de départ (A)<input id="c3A" autocomplete="off"></label>
-        <label data-f="R">Référence arrière<input id="c3R" autocomplete="off"></label>
-        <label data-f="azA">Azimut depuis A<input id="c3AzA" inputmode="decimal"></label>
+        <label data-f="P1"><span id="c3L1">Point 1</span><input id="c3P1" autocomplete="off"></label>
+        <label data-f="P2"><span id="c3L2">Point 2</span><input id="c3P2" autocomplete="off"></label>
+        <label data-f="P3"><span id="c3L3">Point 3</span><input id="c3P3" autocomplete="off"></label>
+        <label data-f="P4"><span id="c3L4">Point 4</span><input id="c3P4" autocomplete="off"></label>
+        <label data-f="from">Distance mesurée depuis<select id="c3From"><option value="1">le point 1</option><option value="2">le point 2 (prolongement)</option></select></label>
+        <label data-f="az1"><span id="c3LAz1">Azimut depuis le point 1</span><input id="c3Az1" inputmode="decimal"></label>
         <label data-f="ang">Angle (+ horaire, − antihoraire)<input id="c3Ang" inputmode="decimal"></label>
-        <label data-f="dA">Distance depuis A<input id="c3DA" inputmode="decimal"></label>
-        <label data-f="B">Point B<input id="c3B" autocomplete="off"></label>
-        <label data-f="azB">Azimut depuis B<input id="c3AzB" inputmode="decimal"></label>
-        <label data-f="dB">Distance depuis B<input id="c3DB" inputmode="decimal"></label>
+        <label data-f="d1"><span id="c3LD1">Distance</span><input id="c3D1" inputmode="decimal"></label>
+        <label data-f="az2">Azimut depuis le point 2<input id="c3Az2" inputmode="decimal"></label>
+        <label data-f="d2">Distance depuis le point 2<input id="c3D2" inputmode="decimal"></label>
+        <label data-f="off">Déport (+ droite, − gauche)<input id="c3Off" inputmode="decimal" value="0"></label>
         <label data-f="sol">Solution<select id="c3Sol"></select></label>
         <label data-f="dz">Dénivelé (m)<input id="c3Dz" inputmode="decimal" placeholder="facultatif"></label>
         <label data-f="pente">ou pente (%)<input id="c3Pente" inputmode="decimal" placeholder="facultatif"></label>
       </div>
+      <p class="hint" id="c3Help"></p>
       <div class="row"><button class="btn" id="c3Calc">Calculer</button></div>
       <dl id="c3Res" class="cgres"></dl>
       <div class="grid">
@@ -558,25 +575,6 @@ details summary { cursor: pointer; font-weight: 600; }
       <dl id="c7Res" class="cgres"></dl>
     </div>
 
-    <!-- 15 Prolonge ligne -->
-    <div class="card cgpane" data-cmd="15">
-      <h2>15 · Prolonge ligne</h2>
-      <div class="grid">
-        <label>Ligne : de (A)<input id="c15A" autocomplete="off"></label>
-        <label>à (B)<input id="c15B" autocomplete="off"></label>
-        <label>Distance depuis A<input id="c15D" inputmode="decimal" placeholder="négative = avant A"></label>
-        <label>Déport (+ droite, − gauche)<input id="c15O" inputmode="decimal" value="0"></label>
-        <label class="full">ou perpendiculaire du point<input id="c15P" autocomplete="off" placeholder="facultatif (3PP)"></label>
-      </div>
-      <div class="row"><button class="btn" id="c15Calc">Calculer</button></div>
-      <dl id="c15Res" class="cgres"></dl>
-      <div class="grid">
-        <label>Nom du nouveau point<input id="c15Nom" autocomplete="off"></label>
-        <label>Code / description<input id="c15Code" autocomplete="off"></label>
-      </div>
-      <div class="row"><button class="btn primary" id="c15Save" disabled>Enregistrer le point</button></div>
-      <div class="msg" id="c15Msg" style="display:none"></div>
-    </div>
   </section>
 
   <!-- ===================== POINTS ===================== -->
