@@ -2,8 +2,12 @@ plugins {
     id 'com.android.application'
 }
 
-// Numéro de version : 0.2.<numéro de compilation GitHub>
+// Numéro de version (gestion des versions Arpent-Nord : vMAJEUR.MINEUR.CORRECTIF, v0 = en essai) :
+//  - versionName : fourni par la compilation (APP_VERSION) : « 0.3.0 » pour une version officielle,
+//    « 0.3.0-essai.17 » pour une compilation d'essai ; « 0.0.0-local » hors GitHub.
+//  - versionCode : numéro de compilation GitHub, toujours croissant (exigé par Android pour les mises à jour).
 def buildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as Integer
+def appVersion = System.getenv('APP_VERSION') ?: '0.0.0-local'
 
 android {
     namespace 'com.arpentnord.collecte'
@@ -14,7 +18,7 @@ android {
         minSdk 26
         targetSdk 34
         versionCode buildNumber
-        versionName "0.2.${buildNumber}"
+        versionName appVersion
     }
 
     buildFeatures {

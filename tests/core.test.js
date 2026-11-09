@@ -283,12 +283,12 @@ test('radio : base inscrite en MTM 7 à 1 km du mobile -> ligne de base 1,000 km
 
 test('CSV : source et âge des corrections en fin de ligne ; nom de base avec virgule protégé', () => {
   const cols = Survey.CSV_COLUMNS.map((c) => c[1]);
-  assert.deepStrictEqual(cols.slice(-4), ['Note', 'Source_corrections', 'Age_corr_max_s', 'Description_code']);
+  assert.deepStrictEqual(cols.slice(-6), ['Note', 'Source_corrections', 'Age_corr_max_s', 'Description_code', 'Type_point', 'Formule']);
   assert.strictEqual(cols.indexOf('Station_base'), 18); // ordre historique conservé
   const csv = Survey.toCsv([{ nom: 'P1', baseId: 'BASE 1, repère', corrSrc: 'Radio (recepteur)', ageMax: 1.23 }]);
   const row = csv.split('\r\n')[1];
   assert.ok(row.includes('"BASE 1, repère"'), row);
-  assert.ok(row.endsWith(',Radio (recepteur),1.2,'), row);
+  assert.ok(row.endsWith(',Radio (recepteur),1.2,,,'), row);
 });
 
 test('pilote Leica (NMEA) disponible et décodeur fonctionnel', () => {
@@ -372,6 +372,111 @@ test('NDA-001 V03 : exemples officiels (605957001, 260804LOT41UTI63), plages NNN
   assert.strictEqual(Codes.defaultSector('CANP'), null);
   const nat = Codes.nat().map((n) => n.code);                                                // section 8
   assert.ok(!nat.includes('TQC') && !nat.includes('TEX') && ['SIG', 'MON', 'DEC', 'ROC', 'GRF', 'GRS'].every((c) => nat.includes(c)));
+});
+
+const Cogo = require(path.join(www, 'cogo.js'));
+const near = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, (msg || '') + ' ' + a + ' ≠ ' + b);
+
+test('COGO angles : DD.MMSS, degrés décimaux, D°M\'S", affichage', () => {
+  near(Cogo.parseAngle('45.1230'), 45 + 12 / 60 + 30 / 3600, 1e-12);
+  near(Cogo.parseAngle('45.123045'), 45 + 12 / 60 + 30.45 / 3600, 1e-12);
+  near(Cogo.parseAngle('45.1'), 45 + 10 / 60, 1e-12);                // 45°10'
+  near(Cogo.parseAngle('45,5', 'deg'), 45.5, 1e-12);
+  near(Cogo.parseAngle('45°12\'30"'), 45 + 12 / 60 + 30 / 3600, 1e-12);
+  near(Cogo.parseAngle('45 12 30'), 45 + 12 / 60 + 30 / 3600, 1e-12);
+  assert.ok(isNaN(Cogo.parseAngle('45.6100')));                     // 61 minutes : refusé
+  assert.strictEqual(Cogo.formatDMS(45 + 12 / 60 + 30 / 3600), '45°12′30″');
+  assert.strictEqual(Cogo.formatDMS(359.99999999), '360°00′00″');
+  assert.strictEqual(Cogo.formatDDMMSS(45 + 12 / 60 + 30.45 / 3600, 2), '45.123045');
+});
+
+test('4 Inverse : azimut, distance, dénivelé, pente ; suite et rayonnement', () => {
+  const r = Cogo.inverse({ e: 1000, n: 1000, z: 100 }, { e: 1100, n: 1100, z: 102 });
+  near(r.az, 45, 1e-12); near(r.dist, 141.4213562, 1e-6); near(r.dz, 2, 1e-12); near(r.slopePct, 1.41421356, 1e-6);
+  near(r.azBack, 225, 1e-12);
+  near(Cogo.inverse({ e: 0, n: 0 }, { e: -10, n: -10 }).az, 225, 1e-12);
+  near(Cogo.inverse({ e: 0, n: 0 }, { e: -10, n: 0 }).az, 270, 1e-12);
+  const pts = [{ name: '1', e: 0, n: 0 }, { name: '2', e: 0, n: 10 }, { name: '3', e: 10, n: 10 }, { name: '4', e: 10, n: 0 }];
+  const ch = Cogo.inverseSeries(pts, 'chain'), ra = Cogo.inverseSeries(pts, 'radial');
+  near(ch.total, 30, 1e-9); assert.deepStrictEqual(ch.legs.map((l) => l.from + '-' + l.to), ['1-2', '2-3', '3-4']);
+  assert.deepStrictEqual(ra.legs.map((l) => l.from + '-' + l.to), ['1-2', '1-3', '1-4']); near(ra.legs[1].dist, Math.sqrt(200), 1e-9);
+});
+
+test('3 Loc Az : azimut-distance, angle-distance, intersections (aller-retour avec l’inverse)', () => {
+  const a = { e: 250000, n: 5180000, z: 50 };
+  const p = Cogo.locAz(a, Cogo.parseAngle('123.4521'), 87.654, { dz: -1.25 });
+  const r = Cogo.inverse(a, p);
+  near(r.az, Cogo.parseAngle('123.4521'), 1e-9); near(r.dist, 87.654, 1e-9); near(p.z, 48.75, 1e-12);
+  // angle à droite de 90° depuis une référence arrière au nord : azimut 90°
+  const q = Cogo.locAngle({ e: 0, n: 0 }, { e: 0, n: 50 }, 90, 10);
+  near(q.e, 10, 1e-9); near(q.n, 0, 1e-9); near(q.az, 90, 1e-12);
+  // azimut-azimut
+  const x = Cogo.intersectAzAz({ e: 0, n: 0 }, 45, { e: 10, n: 0 }, 315);
+  near(x.e, 5, 1e-9); near(x.n, 5, 1e-9);
+  assert.strictEqual(Cogo.intersectAzAz({ e: 0, n: 0 }, 10, { e: 5, n: 0 }, 190), null); // parallèles
+  // distance-distance : gauche / droite de A -> B
+  const dd = Cogo.intersectDistDist({ e: 0, n: 0 }, 5, { e: 8, n: 0 }, 5);
+  near(dd.left.e, 4, 1e-9); near(dd.left.n, 3, 1e-9); near(dd.right.n, -3, 1e-9);
+  assert.strictEqual(Cogo.intersectDistDist({ e: 0, n: 0 }, 1, { e: 10, n: 0 }, 1), null);
+  // azimut-distance : deux solutions le long de l'azimut
+  const ad = Cogo.intersectAzDist({ e: 0, n: 0 }, 90, { e: 10, n: 3 }, 5);
+  assert.strictEqual(ad.length, 2); near(ad[0].e, 6, 1e-9); near(ad[1].e, 14, 1e-9);
+});
+
+test('15 Prolonge ligne (2PD), perpendiculaire (3PP), chaînage-écart d’un point à une ligne', () => {
+  const a = { e: 0, n: 0, z: 10 }, b = { e: 0, n: 100, z: 20 };
+  const p = Cogo.alongLine(a, b, 120, 2);                       // prolongé au-delà de B, 2 m à droite (est)
+  near(p.e, 2, 1e-9); near(p.n, 120, 1e-9); near(p.z, 22, 1e-9);
+  const so = Cogo.stationOffset(a, b, { e: -3, n: 40, z: 15 });
+  near(so.chainage, 40, 1e-9); near(so.offset, -3, 1e-9); near(so.dz, 1, 1e-9);  // gauche = négatif
+  const f = Cogo.perpendicular(a, b, { e: 7, n: 55 });
+  near(f.e, 0, 1e-9); near(f.n, 55, 1e-9); near(f.offset, 7, 1e-9);
+});
+
+test('7 Superficie : carré, triangle, unités, sens de parcours indifférent', () => {
+  const sq = Cogo.area([{ e: 0, n: 0 }, { e: 0, n: 100 }, { e: 100, n: 100 }, { e: 100, n: 0 }]);
+  near(sq.area, 10000, 1e-9); near(sq.hectares, 1, 1e-12); near(sq.perimeter, 400, 1e-9); near(sq.sqft, 107639.104, 1e-3);
+  assert.ok(sq.clockwise);
+  near(Cogo.area([{ e: 0, n: 0 }, { e: 4, n: 0 }, { e: 0, n: 3 }]).area, 6, 1e-12);
+  assert.strictEqual(Cogo.area([{ e: 0, n: 0 }, { e: 1, n: 1 }]), null);
+});
+
+test('facteur d’échelle MTM identique à PROJ (< 0,05 ppm) ; facteur d’altitude', () => {
+  // [Est MTM 7, latitude, facteur PROJ (pyproj, EPSG:2949)]
+  [[199628.3750, 46.93376176, 1.000035906465], [93795.5932, 45.5, 1.000447267507],
+   [409263.9739, 48.0, 1.000034050275], [304800.0, 47.0, 0.999899999989]].forEach(([e, lat, k]) =>
+    near(Cogo.mtmScale(e, lat), k, 5e-8, 'k à E=' + e));
+  near(Cogo.elevationFactor(0, 47), 1, 1e-15);
+  near((1 - Cogo.elevationFactor(200, 47)) * 1e6, 31.4, 0.2);          // 200 m : environ 31 ppm
+});
+
+test('COGO grades et degrés décimaux : saisie et affichage ; angle négatif = antihoraire', () => {
+  near(Cogo.parseAngle('50.2315', 'gon'), 50.2315 * 0.9, 1e-12);
+  near(Cogo.parseAngle('100', 'gon'), 90, 1e-12);
+  assert.strictEqual(Cogo.formatAngle(90, 'gon'), '100.0000 gon');
+  assert.strictEqual(Cogo.formatAngle(45.2083333, 'deg', 4), '45.2083°');
+  assert.strictEqual(Cogo.formatAngle(45 + 12 / 60 + 30 / 3600, 'dms'), '45°12′30.0″');
+  near(Cogo.parseAngle('-30.0000'), -30, 1e-12);
+  const q = Cogo.locAngle({ e: 0, n: 0 }, { e: 0, n: 50 }, Cogo.parseAngle('-90'), 10);   // antihoraire : vers l'ouest
+  near(q.e, -10, 1e-9); near(q.az, 270, 1e-12);
+});
+
+test('facteur combiné du secteur (Menarp) : moyenne des échelles × facteur de l’altitude moyenne', () => {
+  const pts = [{ e: 199628.375, lat: 46.93376176, hEll: 172.6 }, { e: 199728.375, lat: 46.9346, hEll: 174.6 }, { e: 199528.375, lat: 46.933, hEll: null }];
+  const s = Cogo.sectorFactor(pts);
+  near(s.k, (Cogo.mtmScale(199628.375, 46.93376176) + Cogo.mtmScale(199728.375, 46.9346) + Cogo.mtmScale(199528.375, 46.933)) / 3, 1e-15);
+  near(s.hMean, 173.6, 1e-9); assert.strictEqual(s.n, 3); assert.strictEqual(s.nh, 2);
+  near(s.cf, s.k * Cogo.elevationFactor(173.6, (46.93376176 + 46.9346 + 46.933) / 3), 1e-15);
+  near((s.cf - 1) * 1e6, 8.7, 0.3);                                   // environ +9 ppm au point d'essai (MTM 7, h ≈ 174 m)
+  assert.strictEqual(Cogo.sectorFactor([]), null);
+});
+
+test('séquences de points : plages, liste, zéros conservés', () => {
+  assert.deepStrictEqual(Cogo.parseSequence('1-3, 8'), ['1', '2', '3', '8']);
+  assert.deepStrictEqual(Cogo.parseSequence('630663001-630663003'), ['630663001', '630663002', '630663003']);
+  assert.deepStrictEqual(Cogo.parseSequence('P1-P3'), ['P1', 'P2', 'P3']);
+  assert.deepStrictEqual(Cogo.parseSequence('5-3'), ['5', '4', '3']);
+  assert.deepStrictEqual(Cogo.parseSequence('B1 CENT'), ['B1', 'CENT']);
 });
 
 console.log(`\n${passed} tests réussis`);

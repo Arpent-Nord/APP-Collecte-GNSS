@@ -56,6 +56,16 @@ h1 { margin: 0; font-size: 20px; font-weight: 700; flex: 1; }
 .chip { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 6px 11px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .chip.sel { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 .codesel { margin-top: 6px; font-size: 14px; }
+.cgbar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.cgnum { width: 72px; }
+.cgnum input { font-size: 20px; font-weight: 700; text-align: center; }
+.cgpane { display: none; }
+.cgpane.on { display: block; }
+.cgres { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 10px 0; font-size: 15px; }
+.cgres dt { color: var(--muted); }
+.cgres dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cgcmd b { margin-right: 4px; }
+td.theo, .ptype { color: var(--primary); font-style: italic; }
 .codesel b { color: var(--primary); }
 .fix { font-family: 'Barlow Semi Condensed', sans-serif; font-weight: 700; padding: 6px 12px; border-radius: 999px; font-size: 15px; white-space: nowrap;
   background: var(--bad-soft); color: var(--bad); }
@@ -68,6 +78,7 @@ h1 { margin: 0; font-size: 20px; font-weight: 700; flex: 1; }
 nav.tabs { display: flex; gap: 4px; }
 nav.tabs button { flex: 1; background: none; border: none; border-bottom: 3px solid transparent; padding: 10px 4px; font-weight: 600; color: var(--muted); cursor: pointer; }
 nav.tabs button.active { color: var(--primary); border-bottom-color: var(--primary); }
+@media (max-width: 480px) { nav.tabs button { font-size: 14px; padding: 10px 2px; white-space: nowrap; } }
 
 main { padding: 16px; max-width: 760px; margin: 0 auto; }
 section.tab { display: none; }
@@ -147,6 +158,7 @@ details summary { cursor: pointer; font-weight: 600; }
     <button data-tab="travail">Travail</button>
     <button data-tab="recepteur" class="active">Récepteur</button>
     <button data-tab="mesure">Mesure</button>
+    <button data-tab="calculs">Calculs</button>
     <button data-tab="points">Points <span id="nbPoints"></span></button>
   </nav>
 </header>
@@ -405,6 +417,168 @@ details summary { cursor: pointer; font-weight: 600; }
     </div>
   </section>
 
+  <!-- ===================== CALCULS (COGO) ===================== -->
+  <section class="tab" id="tab-calculs">
+    <div class="card">
+      <h2>Calculs</h2>
+      <div class="cgbar">
+        <label class="cgnum">N°<input id="cgN" inputmode="numeric" autocomplete="off" placeholder="3"></label>
+        <div class="chips" id="cgCmds" style="margin-top:0"></div>
+      </div>
+      <p class="hint" id="cgTitle"></p>
+      <p class="hint" id="cgFactInfo" style="margin-top:2px"></p>
+      <details><summary>Réglages des calculs</summary>
+        <div class="grid" style="margin-top:8px">
+          <label>Saisie des angles
+            <select id="cgAng"><option value="dms">DD.MMSS (45.1230 = 45°12′30″)</option><option value="deg">Degrés décimaux (45.2083)</option><option value="gon">Grades (50.2315 gon)</option></select>
+          </label>
+          <label>Distances inscrites
+            <select id="cgDist"><option value="grille">Grille (plan MTM)</option><option value="sol">Sol (facteur combiné appliqué)</option></select>
+          </label>
+          <label>Facteur combiné
+            <select id="cgFact"><option value="secteur">Secteur de travail (moyenne du levé)</option><option value="local">Au lieu de chaque calcul</option><option value="manuel">Inscrit</option></select>
+          </label>
+          <label id="cgFactValWrap">Facteur inscrit<input id="cgFactVal" inputmode="decimal" placeholder="ex. 1.0000089"></label>
+          <label>Code des points calculés
+            <select id="cgCodeSel"><option value="299">299 PCT – calculé sur le terrain</option><option value="300">300 PCB – calculé au bureau</option><option value="301">301 PCC – calculé pour cadastre</option><option value="autre">Autre…</option></select>
+          </label>
+          <label id="cgCodeOtherWrap">Autre code<input id="cgCodeOther" autocomplete="off"></label>
+          <label class="full check"><input type="checkbox" id="cgStay" checked>Rester au point de départ après l’enregistrement (rayonnement)</label>
+        </div>
+      </details>
+    </div>
+
+    <!-- 1 Enregistre -->
+    <div class="card cgpane" data-cmd="1">
+      <h2>1 · Enregistre</h2>
+      <div class="grid">
+        <label>Point<input id="c1Nom" autocomplete="off"></label>
+        <label>Code / description<input id="c1Code" autocomplete="off"></label>
+        <label>Est<input id="c1E" inputmode="decimal"></label>
+        <label>Nord<input id="c1N" inputmode="decimal"></label>
+        <label>Altitude (facultative)<input id="c1Z" inputmode="decimal"></label>
+      </div>
+      <div class="row"><button class="btn primary" id="c1Save">Enregistrer le point</button></div>
+      <h2 style="margin-top:16px">Importer un fichier de points</h2>
+      <div class="grid">
+        <label>Ordre des colonnes (fichier sans en-tête)
+          <select id="c1Order"><option value="PNEZD">P, N, E, Z, D</option><option value="PENZD">P, E, N, Z, D</option></select>
+        </label>
+        <label>Point déjà présent
+          <select id="c1Dup"><option value="skip">Ignorer</option><option value="replace">Remplacer</option></select>
+        </label>
+      </div>
+      <div class="row">
+        <label class="btn" for="c1File" style="display:inline-block;color:var(--ink)">Choisir un fichier (CSV, TXT)</label>
+        <input type="file" id="c1File" style="display:none">
+      </div>
+      <p class="hint">Reconnaît l’export « CSV » d’Emlid Flow 360 (Name, Easting, Northing, Elevation, Description) et les fichiers P,N,E,Z,D. Les coordonnées doivent être dans le système du travail.</p>
+      <div class="msg" id="c1Msg"></div>
+    </div>
+
+    <!-- 2 Liste -->
+    <div class="card cgpane" data-cmd="2">
+      <h2>2 · Liste</h2>
+      <div class="grid">
+        <label class="full">Points (vide = tous ; ex. 1-10, 15, P3)<input id="c2Seq" autocomplete="off"></label>
+        <label>Type
+          <select id="c2Type"><option value="">Tous</option><option value="mesure">Mesurés</option><option value="theo">Théoriques (calculés, inscrits, importés)</option></select>
+        </label>
+        <label>Code contient<input id="c2Code" autocomplete="off" placeholder="ex. 526"></label>
+        <label class="full check"><input type="checkbox" id="c2Leve" checked>Levé en cours seulement</label>
+        <label>Comparer à la ligne : de<input id="c2A" autocomplete="off" placeholder="point A"></label>
+        <label>à<input id="c2B" autocomplete="off" placeholder="point B"></label>
+      </div>
+      <div class="row"><button class="btn primary" id="c2Go">Lister</button><button class="btn" id="c2Csv">Exporter la liste (CSV)</button></div>
+      <div class="msg" id="c2Msg" style="display:none"></div>
+      <div class="tablewrap"><table id="c2Table"></table></div>
+      <details style="margin-top:10px"><summary>Copier la liste vers un autre levé</summary>
+        <label style="margin-top:8px">Nom du levé de destination<input id="c2Dest" autocomplete="off" autocapitalize="characters"></label>
+        <div class="row"><button class="btn" id="c2Copy">Copier</button></div>
+      </details>
+    </div>
+
+    <!-- 3 Loc Az -->
+    <div class="card cgpane" data-cmd="3">
+      <h2>3 · Loc Az — créer un point</h2>
+      <label>Méthode
+        <select id="c3Mode">
+          <option value="azdist">Azimut et distance</option>
+          <option value="angdist">Angle et distance (station, référence arrière)</option>
+          <option value="azaz">Intersection azimut-azimut</option>
+          <option value="distdist">Intersection distance-distance</option>
+          <option value="azdistx">Intersection azimut-distance</option>
+        </select>
+      </label>
+      <div class="grid" style="margin-top:10px">
+        <label data-f="A">Point de départ (A)<input id="c3A" autocomplete="off"></label>
+        <label data-f="R">Référence arrière<input id="c3R" autocomplete="off"></label>
+        <label data-f="azA">Azimut depuis A<input id="c3AzA" inputmode="decimal"></label>
+        <label data-f="ang">Angle (+ horaire, − antihoraire)<input id="c3Ang" inputmode="decimal"></label>
+        <label data-f="dA">Distance depuis A<input id="c3DA" inputmode="decimal"></label>
+        <label data-f="B">Point B<input id="c3B" autocomplete="off"></label>
+        <label data-f="azB">Azimut depuis B<input id="c3AzB" inputmode="decimal"></label>
+        <label data-f="dB">Distance depuis B<input id="c3DB" inputmode="decimal"></label>
+        <label data-f="sol">Solution<select id="c3Sol"></select></label>
+        <label data-f="dz">Dénivelé (m)<input id="c3Dz" inputmode="decimal" placeholder="facultatif"></label>
+        <label data-f="pente">ou pente (%)<input id="c3Pente" inputmode="decimal" placeholder="facultatif"></label>
+      </div>
+      <div class="row"><button class="btn" id="c3Calc">Calculer</button></div>
+      <dl id="c3Res" class="cgres"></dl>
+      <div class="grid">
+        <label>Nom du nouveau point<input id="c3Nom" autocomplete="off"></label>
+        <label>Code / description<input id="c3Code" autocomplete="off"></label>
+      </div>
+      <div class="row"><button class="btn primary" id="c3Save" disabled>Enregistrer le point</button></div>
+      <div class="msg" id="c3Msg" style="display:none"></div>
+    </div>
+
+    <!-- 4 Inverse -->
+    <div class="card cgpane" data-cmd="4">
+      <h2>4 · Inverse</h2>
+      <label>Mode
+        <select id="c4Mode"><option value="2">Entre 2 points</option><option value="chain">Suite 1-2-3-4…</option><option value="radial">Rayonnement 1-2, 1-3, 1-4…</option></select>
+      </label>
+      <div class="grid" style="margin-top:10px">
+        <label data-m="2">De<input id="c4A" autocomplete="off"></label>
+        <label data-m="2">À<input id="c4B" autocomplete="off"></label>
+        <label class="full" data-m="seq">Points dans l’ordre (ex. 1-5 ou 10, 12, 15)<input id="c4Seq" autocomplete="off"></label>
+      </div>
+      <div class="row"><button class="btn primary" id="c4Go">Calculer</button></div>
+      <div class="msg" id="c4Msg" style="display:none"></div>
+      <div class="tablewrap"><table id="c4Table"></table></div>
+    </div>
+
+    <!-- 7 Superficie -->
+    <div class="card cgpane" data-cmd="7">
+      <h2>7 · Superficie</h2>
+      <label>Sommets dans l’ordre (le polygone se ferme seul)<input id="c7Seq" autocomplete="off" placeholder="ex. 1-4 ou 10, 11, 14, 12"></label>
+      <div class="row"><button class="btn primary" id="c7Go">Calculer</button></div>
+      <div class="msg" id="c7Msg" style="display:none"></div>
+      <dl id="c7Res" class="cgres"></dl>
+    </div>
+
+    <!-- 15 Prolonge ligne -->
+    <div class="card cgpane" data-cmd="15">
+      <h2>15 · Prolonge ligne</h2>
+      <div class="grid">
+        <label>Ligne : de (A)<input id="c15A" autocomplete="off"></label>
+        <label>à (B)<input id="c15B" autocomplete="off"></label>
+        <label>Distance depuis A<input id="c15D" inputmode="decimal" placeholder="négative = avant A"></label>
+        <label>Déport (+ droite, − gauche)<input id="c15O" inputmode="decimal" value="0"></label>
+        <label class="full">ou perpendiculaire du point<input id="c15P" autocomplete="off" placeholder="facultatif (3PP)"></label>
+      </div>
+      <div class="row"><button class="btn" id="c15Calc">Calculer</button></div>
+      <dl id="c15Res" class="cgres"></dl>
+      <div class="grid">
+        <label>Nom du nouveau point<input id="c15Nom" autocomplete="off"></label>
+        <label>Code / description<input id="c15Code" autocomplete="off"></label>
+      </div>
+      <div class="row"><button class="btn primary" id="c15Save" disabled>Enregistrer le point</button></div>
+      <div class="msg" id="c15Msg" style="display:none"></div>
+    </div>
+  </section>
+
   <!-- ===================== POINTS ===================== -->
   <section class="tab" id="tab-points">
     <div class="card">
@@ -437,6 +611,8 @@ details summary { cursor: pointer; font-weight: 600; }
 <script src="grids/ht2_2010v70.js"></script>
 <script src="grids/ht2_2002v70.js"></script>
 <script src="grids/na83scrs.js"></script>
+<script src="js/cogo.js"></script>
 <script src="js/app.js"></script>
+<script src="js/cogo-ui.js"></script>
 </body>
 </html>

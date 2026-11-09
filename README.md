@@ -1,7 +1,7 @@
 # Collecte GNSS — Arpent-Nord
 
 Application Android de collecte qui se branche directement aux récepteurs GNSS par Bluetooth, sans passer par les applications des fabricants.
-**Version 0.2** : connexion au récepteur, état RTK en direct, corrections NTRIP, mesure de points par moyenne avec critères, **travail avec système de coordonnées (MTM, CGVD28)**, export CSV.
+**En essai (v0)** : connexion au récepteur, état RTK en direct, corrections NTRIP, mesure de points par moyenne avec critères, **travail avec système de coordonnées (MTM, CGVD28)**, export CSV.
 
 ## Principe
 
@@ -35,11 +35,19 @@ Serveur NTRIP ──Internet──► Client NTRIP                              
    `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
    Sans eux, l'APK fonctionne, mais chaque nouvelle version exige de désinstaller l'ancienne (et efface les points sur l'appareil).
 3. Onglet **Actions** : la compilation démarre à chaque envoi sur `main` (environ 5 min). On peut aussi la lancer avec « Run workflow ».
-4. L'APK apparaît dans **Releases** : `Collecte-GNSS-0.1.N.apk`.
+
+## Versions (gestion des versions Arpent-Nord)
+
+Numérotation `vMAJEUR.MINEUR.CORRECTIF` du système `01_Validation_des_versions` ; **v0 = en essai**, v1.0.0 à la mise en service.
+
+- **Compilation d'essai** : chaque envoi sur `main` produit un APK `Collecte-GNSS-0.3.0-essai.N.apk` publié dans la pré-release **« essai »** (remplacée à chaque envoi, jamais « Latest »). Aucun tag de version n'est créé automatiquement.
+- **Version officielle** : créée avec `01_GERER_VERSIONS.bat` (choix 2 : correctif, mineur, majeur) ou « Draft a new release » avec un tag `vX.Y.Z`. Sa publication relance la compilation, qui joint `Collecte-GNSS-X.Y.Z.apk` à la release ; elle devient « Latest ».
+- Le numéro s'affiche au bas de l'application (« version 0.3.0 » ou « 0.3.0-essai.N »). Le code de version Android suit le numéro de compilation (toujours croissant).
+- Message d'envoi : remplacer « Add files via upload » par ce qui a changé (il apparaît dans l'état des versions et les releases).
 
 ## Installer sur un appareil Android (téléphone, tablette, TSC5)
 
-1. Ouvrir la page Releases du dépôt sur l'appareil et télécharger l'APK.
+1. Ouvrir la page Releases du dépôt sur l'appareil et télécharger l'APK : release **Latest** (version officielle) ou pré-release **essai** (dernière compilation).
 2. Autoriser l'installation d'applications de cette source quand Android le demande.
 3. Au premier lancement, accepter l'autorisation **Appareils à proximité** (Bluetooth).
 
@@ -62,7 +70,7 @@ Serveur NTRIP ──Internet──► Client NTRIP                              
 - [ ] Export CSV vers le dossier SharePoint/OneDrive du mandat.
 - [ ] Coupure volontaire (récepteur éteint, perte réseau) : l'application le signale et les corrections reprennent seules.
 
-## Travail et systèmes de coordonnées (version 0.2)
+## Travail et systèmes de coordonnées
 
 Onglet **Travail** :
 
@@ -106,6 +114,25 @@ Onglet Récepteur, carte « Travail écran éteint » : option « Garder l'écra
 - La liste des codes (`www/js/codes-data.js`) est **générée** à partir de la version publiée de « Recherche de codes » :
   `node tools/maj-codes.js chemin/APP-PCodes/index.html` (dépôt public `Arpent-Nord/APP-PCodes`). À refaire quand la liste change.
 - CSV : colonne `Description_code` ajoutée à la fin.
+
+## Calculs (COGO) — raccourcis à la Menarp
+
+Onglet **Calculs** : taper le numéro (ou toucher le bouton). Les numéros reprennent ceux de Menarp / Cadarp 2000 (Roger Perreault, Développement Darp), connus de plusieurs arpenteurs.
+
+| N° | Commande | Contenu |
+|---|---|---|
+| 1 | Enregistre | Inscrire un point (E, N, Z, code) ; importer un fichier (CSV Emlid Flow 360, P,N,E,Z,D ou P,E,N,Z,D) |
+| 2 | Liste | Séquence (1-10, 15…), mesurés ou théoriques, code, levé ; comparaison à une ligne (chaînage, écart, dZ) ; export CSV ; copie vers un autre levé |
+| 3 | Loc Az | Créer un point : azimut-distance, angle-distance (station + référence arrière), intersections azimut-azimut, distance-distance, azimut-distance ; dénivelé ou pente |
+| 4 | Inverse | Entre 2 points, en suite 1-2-3-4, en rayonnement 1-2, 1-3, 1-4 ; azimut, distance grille et sol, dZ, pente |
+| 7 | Superficie | Polygone fermé : m² grille et sol, ha, pi², acres, périmètre |
+| 15 | Prolonge ligne | Point sur une ligne à une distance avec déport (2PD) ; perpendiculaire d'un point (3PP) |
+
+- Angles en **DD.MMSS** (45.1230 = 45°12′30″), **degrés décimaux** ou **grades** (400 gon) ; azimuts du nord, sens horaire. Angle + = horaire, − = antihoraire ; déport + = à droite de l'axe, − = à gauche (bouton ± pour le signe).
+- **Distances grille ou sol** : facteur combiné = facteur d'échelle MTM (identique à PROJ) × facteur d'altitude R / (R + h). Par défaut, **facteur du secteur de travail** comme Menarp : moyenne des facteurs d'échelle des points du levé × facteur de l'altitude moyenne (h = altitude + N). Aussi : au lieu de chaque calcul, ou inscrit.
+- **Code des points calculés** : 299 PCT (calculé sur le terrain) par défaut ; 300 PCB, 301 PCC ou autre code au choix.
+- Rayonnement (option par défaut) : on reste au point de départ ; sinon le nouveau point devient la station (cheminement).
+- Les points calculés, inscrits et importés sont **théoriques** (en italique) ; le CSV porte `Type_point` et `Formule` (ex. « Loc Az de S1, Az 45°00′00.0″, D 10.000 »).
 
 ## Corrections par radio (LoRa, UHF) ou modem du récepteur
 

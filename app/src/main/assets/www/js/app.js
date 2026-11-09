@@ -365,7 +365,7 @@
     var r = state.pending; if (!r || !r.n) return;
     var p = {
       leve: $('mLeve').value.trim(), nom: $('mNom').value.trim(), code: $('mCode').value.trim(), note: $('mNote').value.trim(),
-      codeDesc: codeDescription($('mCode').value),
+      codeDesc: codeDescription($('mCode').value), type: 'mesure',
       est: r.est, nord: r.nord, alt: r.alt, systeme: r.systeme, systemeAlti: r.systemeAlti, sep: r.sep,
       baseKm: r.baseKm, baseId: r.baseId, corrSrc: r.corrSrc, ageMax: r.ageMax,
       lat: r.lat, lon: r.lon, hEll: r.hEll, sigmaH: r.sigmaH, sigmaV: r.sigmaV, n: r.n, rejected: r.rejected,
@@ -690,7 +690,8 @@
     $('ptEmpty').style.display = points.length ? 'none' : 'block';
     $('ptBody').innerHTML = points.map(function (p, i) {
       var f3 = function (v) { return v === null || v === undefined ? '—' : v.toFixed(3); };
-      return '<tr><td>' + esc(p.nom) + '</td><td>' + esc(p.code) + '</td><td class="num">' + f3(p.est) + '</td><td class="num">' + f3(p.nord) +
+      var theo = p.type && p.type !== 'mesure';
+      return '<tr><td' + (theo ? ' class="theo" title="' + esc(p.type + (p.formule ? ' : ' + p.formule : '')) + '"' : '') + '>' + esc(p.nom) + '</td><td>' + esc(p.code) + '</td><td class="num">' + f3(p.est) + '</td><td class="num">' + f3(p.nord) +
         '</td><td class="num">' + f3(p.alt) + '</td><td class="num">' + fmtCm(p.sigmaH) + '</td><td class="num">' + fmtCm(p.sigmaV) +
         '</td><td><button class="btn danger" data-del="' + i + '" title="Supprimer">✕</button></td></tr>';
     }).join('');
@@ -880,5 +881,36 @@
     var addr = Native.syncState();
     if (addr) { $('selDevice').value = addr; }
   }
+  // ---------- Contexte partagé avec le module Calculs (cogo-ui.js) ----------
+  window.AppCtx = {
+    points: function () { return points; },
+    job: job,
+    leve: function () { return $('mLeve').value.trim(); },
+    /* Ajoute des points (calculés, inscrits, importés) à la base de l'appareil. */
+    addPoints: function (list) {
+      list.forEach(function (p) { points.push(p); });
+      save(STORE_POINTS, points); renderPoints();
+      var names = {}; list.forEach(function (p) { names[p.nom] = 1; });
+      if (names[$('mNom').value.trim()]) { $('mNom').value = settings.jNum === 'libre' ? Survey.nextPointName($('mNom').value.trim()) : (autoPointName() || Survey.nextPointName($('mNom').value.trim())); persistFields(); }
+    },
+    replacePoint: function (i, p) { points[i] = p; save(STORE_POINTS, points); renderPoints(); },
+    nextName: function () {
+      var n = settings.jNum === 'libre' ? null : autoPointName();
+      if (n) return n;
+      var last = points.length ? points[points.length - 1].nom : $('mNom').value.trim() || '0';
+      var c = Survey.nextPointName(last), used = {}; points.forEach(function (p) { used[p.nom] = 1; });
+      while (used[c]) c = Survey.nextPointName(c);
+      return c;
+    },
+    codeDescription: codeDescription,
+    saveText: function (name, mime, content) {
+      if (Native) { Native.saveFile(name, mime, content); return; }
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(['\uFEFF' + content], { type: mime }));
+      a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    },
+    esc: esc, settings: settings, save: function () { save(STORE_SETTINGS, settings); }
+  };
+
   $('modeInfo').textContent = Native ? 'Application Android — version ' + Native.appVersion() : 'Mode navigateur : simulation seulement (le Bluetooth exige l’application Android).';
 })();
