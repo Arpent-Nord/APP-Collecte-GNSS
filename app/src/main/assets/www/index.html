@@ -60,6 +60,25 @@ h1 { margin: 0; font-size: 20px; font-weight: 700; flex: 1; }
 .cgnum { width: 72px; }
 .cgnum input { font-size: 20px; font-weight: 700; text-align: center; }
 .cgpane { display: none; }
+.pkbtn { white-space: nowrap; }
+.pk { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.35); display: flex; align-items: flex-end; justify-content: center; }
+.pk[hidden] { display: none; }
+.pkbox { background: var(--surface); width: 100%; max-width: 640px; max-height: 88vh; display: flex; flex-direction: column;
+  border-radius: 14px 14px 0 0; padding: 12px 14px; box-shadow: 0 -4px 20px rgba(0,0,0,.25); }
+.pkhead { display: flex; align-items: center; gap: 8px; }
+.pkhead b { flex: 1; font-size: 16px; }
+.pkx { border: 0; background: none; font-size: 24px; color: var(--muted); cursor: pointer; padding: 0 6px; }
+.pkopts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pklist { overflow-y: auto; margin-top: 8px; border-top: 1px solid var(--line); flex: 1; min-height: 120px; }
+.pkrow { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; width: 100%; text-align: left; padding: 10px 6px; border: 0;
+  border-bottom: 1px solid var(--line); background: none; color: var(--ink); font-size: 15px; cursor: pointer; }
+.pkrow:active, .pkrow.sel { background: var(--primary-soft); }
+.pkrow .nm { font-weight: 700; }
+.pkrow .nm.theo { color: var(--primary); font-style: italic; }
+.pkrow .cd { color: var(--muted); font-size: 13px; text-align: right; }
+.pkrow .xy { grid-column: 1 / -1; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.pkfoot { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.pkfoot .pkseq { flex: 1 1 100%; font-size: 14px; color: var(--ink); min-height: 18px; }
 .cgpane.on { display: block; }
 .cgres { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 10px 0; font-size: 15px; }
 .cgres dt { color: var(--muted); }
@@ -529,11 +548,11 @@ details summary { cursor: pointer; font-weight: 600; }
         <label data-f="P3"><span id="c3L3">Point 3</span><input id="c3P3" autocomplete="off"></label>
         <label data-f="P4"><span id="c3L4">Point 4</span><input id="c3P4" autocomplete="off"></label>
         <label data-f="from">Distance mesurée depuis<select id="c3From"><option value="1">le point 1</option><option value="2">le point 2 (prolongement)</option></select></label>
-        <label data-f="az1"><span id="c3LAz1">Azimut depuis le point 1</span><input id="c3Az1" inputmode="decimal"></label>
+        <label data-f="az1"><span id="c3LAz1">Azimut depuis le point 1</span><input id="c3Az1" autocomplete="off" placeholder="ex. 45.1230 ou 4-7"></label>
         <label data-f="ang">Angle (+ horaire, − antihoraire)<input id="c3Ang" inputmode="decimal"></label>
-        <label data-f="d1"><span id="c3LD1">Distance</span><input id="c3D1" inputmode="decimal"></label>
-        <label data-f="az2">Azimut depuis le point 2<input id="c3Az2" inputmode="decimal"></label>
-        <label data-f="d2">Distance depuis le point 2<input id="c3D2" inputmode="decimal"></label>
+        <label data-f="d1"><span id="c3LD1">Distance</span><input id="c3D1" autocomplete="off" placeholder="ex. 12.345 ou 4-7"></label>
+        <label data-f="az2">Azimut depuis le point 2<input id="c3Az2" autocomplete="off" placeholder="ex. 45.1230 ou 4-7"></label>
+        <label data-f="d2">Distance depuis le point 2<input id="c3D2" autocomplete="off" placeholder="ex. 12.345 ou 4-7"></label>
         <label data-f="off">Déport (+ droite, − gauche)<input id="c3Off" inputmode="decimal" value="0"></label>
         <label data-f="sol">Solution<select id="c3Sol"></select></label>
         <label data-f="dz">Dénivelé (m)<input id="c3Dz" inputmode="decimal" placeholder="facultatif"></label>

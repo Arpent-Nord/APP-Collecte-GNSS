@@ -341,6 +341,32 @@
     $(id).addEventListener('change', function () { pending3 = null; $('c3Save').disabled = true; });
   });
   function req(v, what) { if (isNaN(v)) throw new Error(what + ' requis'); return v; }
+  /* « 4-7 » (ou « 4-7+90 ») dans un champ d'azimut ou de distance : calculé à partir de deux points du levé. */
+  function pairOf(id) {
+    var m = /^\s*([^\s+\-,;]+)\s*-\s*([^\s+\-,;]+)\s*(?:([+-])\s*(\S+))?\s*$/.exec($(id).value);
+    if (!m) return null;
+    var pts = need([m[1], m[2]]);
+    return { a: pts[0], b: pts[1], sign: m[3], extra: m[4] };
+  }
+  /* Azimut : nombre (format choisi) ou 4-7 [± angle]. */
+  function azIn(id, what) {
+    var pr = pairOf(id);
+    if (!pr) return req(ang(id), what);
+    var az = Cogo.azimuth(pr.a, pr.b);
+    if (pr.extra) { var x = Cogo.parseAngle(pr.extra, angMode()); if (isNaN(x)) throw new Error('Angle « ' + pr.extra + ' » illisible'); az += pr.sign === '-' ? -x : x; }
+    if (Cogo.hdist(pr.a, pr.b) === 0) throw new Error('Points ' + pr.a.name + ' et ' + pr.b.name + ' confondus');
+    return Cogo.norm360(az);
+  }
+  /* Distance : nombre (grille ou sol selon le réglage) ou 4-7 (distance grille entre deux points, ramenée au réglage
+   * pour que la conversion grille/sol la redonne exactement). */
+  function distIn(id, P, what) {
+    var pr = pairOf(id);
+    if (!pr) return req(num(id), what);
+    var d = Cogo.hdist(pr.a, pr.b);
+    return $('cgDist').value === 'sol' ? d / factorFor(P) : d;
+  }
+  /* Texte de la formule : « 4-7 » si la valeur vient de deux points. */
+  function src(id) { var v = $(id).value.trim(); return /^[^\s+\-,;]+\s*-\s*[^\s+\-,;]+/.test(v) && !/^-?[\d.,]+$/.test(v) ? ' (' + v.replace(/\s+/g, '') + ')' : ''; }
   function calc3() {
     var m = $('c3Mode').value, cfg = M3[m], names = [];
     cfg.f.forEach(function (f) { if (/^P\d$/.test(f)) names.push($('c3' + f).value); });
@@ -351,13 +377,13 @@
     switch (m) {
       case '2P': c = Cogo.midpoint(A, B); formule = '2P de ' + list; break;
       case '2PD': {
-        var d = req(num('c3D1'), 'Distance'), off = num('c3Off'), from = +$('c3From').value;
+        var d = distIn('c3D1', P, 'Distance'), off = num('c3Off'), from = +$('c3From').value;
         if (Cogo.hdist(A, B) === 0) throw new Error('Les deux points sont confondus');
         c = Cogo.pointAtDistance(A, B, toGrid(d, P), from, isNaN(off) ? 0 : toGrid(off, P));
-        formule = '2PD ' + list + ', D ' + d.toFixed(3) + sd + ' depuis ' + (from === 2 ? B.name : A.name) + (off ? ', déport ' + off.toFixed(3) : ''); break;
+        formule = '2PD ' + list + ', D ' + d.toFixed(3) + sd + src('c3D1') + ' depuis ' + (from === 2 ? B.name : A.name) + (off ? ', déport ' + off.toFixed(3) : ''); break;
       }
       case '2D': {
-        var d1 = req(num('c3D1'), 'Distance depuis le point 1'), d2 = req(num('c3D2'), 'Distance depuis le point 2');
+        var d1 = distIn('c3D1', P, 'Distance depuis le point 1'), d2 = distIn('c3D2', P, 'Distance depuis le point 2');
         var side = (d1 < 0 || d2 < 0) ? -1 : +$('c3Sol').value;
         c = Cogo.twoDistances(A, B, toGrid(Math.abs(d1), P), toGrid(Math.abs(d2), P), side);
         if (!c) throw new Error('Les distances ' + Math.abs(d1).toFixed(3) + ' et ' + Math.abs(d2).toFixed(3) + ' ne se croisent pas (base ' + Cogo.hdist(A, B).toFixed(3) + ' m)');
@@ -371,21 +397,21 @@
         extra.push(['Rayon', f3(c.r) + ' m grille · ' + f3(c.r / factorFor(P)) + ' m sol']); formule = '3C ' + list + ', R ' + c.r.toFixed(3); break;
       case 'RECT': c = Cogo.rectCorner(P[0], P[1], P[2]); formule = 'RECT ' + list; break;
       case 'azdist': {
-        var az = req(ang('c3Az1'), 'Azimut'), dd = req(num('c3D1'), 'Distance');
-        c = Cogo.locAz(A, az, toGrid(dd, P), opt); formule = 'Az-dist de ' + A.name + ', Az ' + fmtAz(az) + ', D ' + dd.toFixed(3) + sd; break;
+        var az = azIn('c3Az1', 'Azimut'), dd = distIn('c3D1', P, 'Distance');
+        c = Cogo.locAz(A, az, toGrid(dd, P), opt); formule = 'Az-dist de ' + A.name + ', Az ' + fmtAz(az) + src('c3Az1') + ', D ' + dd.toFixed(3) + sd + src('c3D1'); break;
       }
       case 'angdist': {
-        var an = req(ang('c3Ang'), 'Angle'), d3 = req(num('c3D1'), 'Distance');
+        var an = req(ang('c3Ang'), 'Angle'), d3 = distIn('c3D1', P, 'Distance');
         c = Cogo.locAngle(A, B, an, toGrid(d3, [A]), opt);
         formule = 'Angle-dist de ' + A.name + ' (réf. ' + B.name + '), Ang ' + fmtAz(an) + ', D ' + d3.toFixed(3) + sd; break;
       }
       case 'azaz': {
-        var a1 = req(ang('c3Az1'), 'Azimut depuis le point 1'), a2 = req(ang('c3Az2'), 'Azimut depuis le point 2');
+        var a1 = azIn('c3Az1', 'Azimut depuis le point 1'), a2 = azIn('c3Az2', 'Azimut depuis le point 2');
         c = Cogo.intersectAzAz(A, a1, B, a2); if (!c) throw new Error('Azimuts parallèles : aucune intersection');
-        c.z = null; formule = 'Intersection Az ' + A.name + ' ' + fmtAz(a1) + ' / Az ' + B.name + ' ' + fmtAz(a2); break;
+        c.z = null; formule = 'Intersection Az ' + A.name + ' ' + fmtAz(a1) + src('c3Az1') + ' / Az ' + B.name + ' ' + fmtAz(a2) + src('c3Az2'); break;
       }
       case 'azdistx': {
-        var a3 = req(ang('c3Az1'), 'Azimut depuis le point 1'), r3 = req(num('c3D2'), 'Distance depuis le point 2');
+        var a3 = azIn('c3Az1', 'Azimut depuis le point 1'), r3 = distIn('c3D2', P, 'Distance depuis le point 2');
         var sols = Cogo.intersectAzDist(A, a3, B, toGrid(r3, P));
         if (!sols.length) throw new Error('L’azimut ne rencontre pas la distance');
         c = sols[Math.min(sols.length, +$('c3Sol').value || 1) - 1]; c.z = null;
@@ -449,6 +475,138 @@
       msg('c7Msg', '');
     } catch (e) { $('c7Res').innerHTML = ''; msg('c7Msg', e.message + '.', 'warn'); }
   });
+
+  // ---------- Sélecteur de points (ouvre le levé et aide à choisir) ----------
+  var PK = { input: null, mode: 'one', chosen: [], skip: {} };
+  (function buildPicker() {
+    var d = document.createElement('div'); d.className = 'pk'; d.id = 'pk'; d.hidden = true;
+    d.innerHTML = '<div class="pkbox" role="dialog" aria-modal="true">' +
+      '<div class="pkhead"><b id="pkTitle">Choisir un point</b><button class="pkx" id="pkClose" type="button" aria-label="Fermer">×</button></div>' +
+      '<input id="pkQ" placeholder="Chercher : nom, code, description" autocomplete="off">' +
+      '<div class="pkopts"><label>Levé<select id="pkLeve"></select></label>' +
+      '<label>Ordre<select id="pkSort"><option value="recent">Plus récents</option><option value="near">Plus proches de moi</option><option value="name">Par nom</option></select></label></div>' +
+      '<div class="pklist" id="pkList"></div>' +
+      '<div class="pkfoot"><div class="pkseq" id="pkSeq"></div>' +
+      '<button class="btn" id="pkKbd" type="button">Saisir au clavier</button>' +
+      '<button class="btn" id="pkUndo" type="button">Retirer le dernier</button>' +
+      '<button class="btn primary" id="pkOk" type="button">OK</button></div></div>';
+    document.body.appendChild(d);
+    d.addEventListener('click', function (e) { if (e.target === d) closePicker(); });
+  })();
+  if (S.pkSort) $('pkSort').value = S.pkSort;
+  function leveList() {
+    var cur = Ctx.leve(), seen = {}, out = [['*cur', 'Levé en cours (' + (cur || 'sans nom') + ')'], ['*all', 'Tous les levés']];
+    Ctx.points().forEach(function (p) { var l = p.leve || ''; if (!seen[l] && l !== cur) { seen[l] = 1; out.push([l, l || '(sans nom)']); } });
+    return out;
+  }
+  function pkPoints() {
+    var sel = $('pkLeve').value, cur = Ctx.leve(), q = $('pkQ').value.trim().toLowerCase();
+    var pts = Ctx.points(), byName = {}, list = [];
+    for (var i = pts.length - 1; i >= 0; i--) {
+      var p = pts[i];
+      if (p.est === null || p.est === undefined || byName[p.nom]) continue;
+      if (sel === '*cur' ? (p.leve || '') !== cur : sel !== '*all' && (p.leve || '') !== sel) continue;
+      byName[p.nom] = 1;
+      if (q && (p.nom + ' ' + (p.code || '') + ' ' + (p.codeDesc || '')).toLowerCase().indexOf(q) < 0) continue;
+      list.push({ p: p, i: i });
+    }
+    var here = Ctx.here ? Ctx.here() : null, sort = $('pkSort').value;
+    if (sort === 'near' && here) list.forEach(function (x) { x.d = Math.hypot(x.p.est - here.e, x.p.nord - here.n); });
+    if (sort === 'near' && here) list.sort(function (a, b) { return a.d - b.d; });
+    else if (sort === 'name') list.sort(function (a, b) { return String(a.p.nom).localeCompare(String(b.p.nom), 'fr', { numeric: true }); });
+    return { list: list, here: here };
+  }
+  /* Mode « code » : bibliothèque de Pcodes (codes récents si la recherche est vide). */
+  function renderCodes() {
+    var q = $('pkQ').value.trim(), box = $('pkList'), list;
+    list = q ? Codes.search(q, 60) : (S.recentCodes || []).map(function (c) { return Codes.byCode(c); }).filter(Boolean)
+      .concat(['299', '300', '301'].map(function (c) { return Codes.byCode(c); }).filter(Boolean));
+    var seen = {}; box.innerHTML = '';
+    list.forEach(function (c) {
+      if (seen[c.code]) return; seen[c.code] = 1;
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'pkrow';
+      b.innerHTML = '<span class="nm">' + esc(c.code) + ' ' + esc(c.aph || '') + '</span><span class="cd">' + esc(c.categorie || '') + '</span><span class="xy">' + esc(c.description) + '</span>';
+      b.addEventListener('click', function () { finish(c.code); });
+      box.appendChild(b);
+    });
+    if (!list.length) box.innerHTML = '<p class="hint" style="padding:10px">Aucun code. Chercher par numéro, abréviation ou mot.</p>';
+    $('pkSeq').textContent = ''; $('pkOk').style.display = 'none'; $('pkUndo').style.display = 'none';
+  }
+  function renderPicker() {
+    var isCode = PK.mode === 'code';
+    document.querySelector('.pkopts').style.display = isCode ? 'none' : '';
+    if (isCode) return renderCodes();
+    var r = pkPoints(), box = $('pkList'), f = function (v) { return v === null || v === undefined ? '—' : v.toFixed(3); };
+    box.innerHTML = '';
+    if (!r.list.length) box.innerHTML = '<p class="hint" style="padding:10px">Aucun point' + ($('pkQ').value ? ' pour cette recherche' : ' dans ce levé') + '. Essayez « Tous les levés ».</p>';
+    r.list.slice(0, 300).forEach(function (x) {
+      var p = x.p, b = document.createElement('button'), theo = p.type && p.type !== 'mesure';
+      b.type = 'button'; b.className = 'pkrow' + (PK.chosen.indexOf(p.nom) >= 0 ? ' sel' : '');
+      b.innerHTML = '<span class="nm' + (theo ? ' theo' : '') + '">' + esc(p.nom) + '</span><span class="cd">' + esc(p.code || '') + (p.codeDesc ? ' · ' + esc(p.codeDesc) : '') + '</span>' +
+        '<span class="xy">E ' + f(p.est) + ' · N ' + f(p.nord) + ' · Z ' + f(p.alt) + (x.d !== undefined ? ' · à ' + x.d.toFixed(1) + ' m' : '') + (theo ? ' · ' + esc(p.type) : '') + '</span>';
+      b.addEventListener('click', function () { pickPoint(p.nom); });
+      box.appendChild(b);
+    });
+    if ($('pkSort').value === 'near' && !r.here) box.insertAdjacentHTML('afterbegin', '<p class="hint" style="padding:6px">Position du récepteur inconnue : ordre des plus récents.</p>');
+    var multi = PK.mode !== 'one';
+    $('pkSeq').textContent = multi ? (PK.chosen.length ? (PK.mode === 'pair' ? 'De ' + PK.chosen.join(' vers ') : PK.chosen.join(', ')) : (PK.mode === 'pair' ? 'Touchez le point de départ, puis le point d’arrivée.' : 'Touchez les points dans l’ordre.')) : '';
+    $('pkOk').style.display = PK.mode === 'seq' ? '' : 'none';
+    $('pkUndo').style.display = multi && PK.chosen.length ? '' : 'none';
+  }
+  function openPicker(input, mode, title) {
+    PK.input = input; PK.mode = mode; PK.chosen = [];
+    if (mode === 'seq') PK.chosen = Cogo.parseSequence(input.value);
+    $('pkTitle').textContent = title || (mode === 'code' ? 'Choisir un code' : mode === 'pair' ? 'Choisir deux points' : mode === 'seq' ? 'Choisir les points' : 'Choisir un point');
+    var sel = $('pkLeve'), prev = sel.value; sel.innerHTML = '';
+    leveList().forEach(function (o) { var x = document.createElement('option'); x.value = o[0]; x.textContent = o[1]; sel.appendChild(x); });
+    sel.value = prev && [].some.call(sel.options, function (o) { return o.value === prev; }) ? prev : '*cur';
+    // Levé en cours vide : montrer tous les levés
+    $('pkQ').value = '';
+    if (mode !== 'code' && sel.value === '*cur' && !pkPoints().list.length) sel.value = '*all';
+    $('pk').hidden = false; renderPicker();
+  }
+  function closePicker() { $('pk').hidden = true; PK.input = null; }
+  function finish(val) {
+    var inp = PK.input; closePicker(); if (!inp) return;
+    inp.value = val; inp.dispatchEvent(new Event('input')); inp.dispatchEvent(new Event('change'));
+  }
+  function pickPoint(name) {
+    if (PK.mode === 'one') { finish(name); return; }
+    if (PK.mode === 'pair') {
+      PK.chosen.push(name);
+      if (PK.chosen.length === 2) { if (PK.chosen[0] === PK.chosen[1]) { PK.chosen.pop(); return renderPicker(); } finish(PK.chosen.join('-')); return; }
+      return renderPicker();
+    }
+    PK.chosen.push(name); renderPicker();
+  }
+  $('pkClose').addEventListener('click', closePicker);
+  $('pkOk').addEventListener('click', function () { finish(PK.chosen.join(', ')); });
+  $('pkUndo').addEventListener('click', function () { PK.chosen.pop(); renderPicker(); });
+  $('pkKbd').addEventListener('click', function () { var inp = PK.input; closePicker(); if (inp) { PK.skip[inp.id] = true; inp.focus(); } });
+  $('pkQ').addEventListener('input', renderPicker);
+  $('pkLeve').addEventListener('change', renderPicker);
+  $('pkSort').addEventListener('change', function () { S.pkSort = this.value; Ctx.save(); renderPicker(); });
+
+  /* Ajoute un bouton « Points » à un champ ; un champ de point vide ouvre le sélecteur dès qu'on le touche. */
+  function attach(id, mode, label, auto) {
+    var inp = $(id), wrap = inp.parentNode.classList && inp.parentNode.classList.contains('inline') ? inp.parentNode : null;
+    if (!wrap) {
+      wrap = document.createElement('div'); wrap.className = 'inline'; wrap.style.marginTop = '4px';
+      inp.parentNode.insertBefore(wrap, inp); wrap.appendChild(inp); inp.style.marginTop = '0';
+    }
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'btn pkbtn'; b.textContent = label || 'Points';
+    b.title = mode === 'pair' ? 'Calculer à partir de deux points (4-7)' : mode === 'code' ? 'Choisir dans la liste des codes' : 'Choisir dans le levé';
+    wrap.insertBefore(b, inp.nextSibling);
+    b.addEventListener('click', function () { openPicker(inp, mode); });
+    if (auto) inp.addEventListener('focus', function () {
+      if (PK.skip[id]) { PK.skip[id] = false; return; }
+      if (!inp.value.trim() && $('pk').hidden) { inp.blur(); openPicker(inp, mode); }
+    });
+  }
+  ['c3P1', 'c3P2', 'c3P3', 'c3P4', 'c4A', 'c4B', 'c2A', 'c2B'].forEach(function (id) { attach(id, 'one', 'Points', true); });
+  ['c4Seq', 'c7Seq', 'c2Seq'].forEach(function (id) { attach(id, 'seq', 'Points', id !== 'c2Seq'); });
+  ['c3Az1', 'c3Az2', 'c3D1', 'c3D2'].forEach(function (id) { attach(id, 'pair', '2 pts', false); });
+  ['c1Code', 'c3Code', 'c2Code'].forEach(function (id) { attach(id, 'code', 'Codes', false); });
 
   window.CogoUi = { parsePointFile: parsePointFile };
 })();

@@ -909,7 +909,12 @@
       a.href = URL.createObjectURL(new Blob(['\uFEFF' + content], { type: mime }));
       a.download = name; document.body.appendChild(a); a.click(); a.remove();
     },
-    esc: esc, settings: settings, save: function () { save(STORE_SETTINGS, settings); }
+    esc: esc, settings: settings, save: function () { save(STORE_SETTINGS, settings); },
+    /* Position actuelle du récepteur dans le système du travail (pour trier les points par proximité), ou null. */
+    here: function () {
+      var g = state.gga; if (!g || g.lat === null || Date.now() - state.lastGgaAt > 5000) return null;
+      var c = Proj.convert(g.lat, g.lon, g.hEll, job()); return c && c.e !== null ? { e: c.e, n: c.n } : null;
+    }
   };
 
   $('modeInfo').textContent = Native ? 'Application Android — version ' + Native.appVersion() : 'Mode navigateur : simulation seulement (le Bluetooth exige l’application Android).';

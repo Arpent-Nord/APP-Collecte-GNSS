@@ -129,6 +129,8 @@ Onglet **Calculs** : taper le numéro (ou toucher le bouton). Les numéros repre
 
 - Angles en **DD.MMSS** (45.1230 = 45°12′30″), **degrés décimaux** ou **grades** (400 gon) ; azimuts du nord, sens horaire. Angle + = horaire, − = antihoraire ; déport + = à droite de l'axe, − = à gauche (bouton ± pour le signe).
 - **Distances grille ou sol** : facteur combiné = facteur d'échelle MTM (identique à PROJ) × facteur d'altitude R / (R + h). Par défaut, **facteur du secteur de travail** comme Menarp : moyenne des facteurs d'échelle des points du levé × facteur de l'altitude moyenne (h = altitude + N). Aussi : au lieu de chaque calcul, inscrit, ou 1 (aucune correction).
+- **Choisir sans taper** : toucher un champ de point vide ouvre le **levé en cours** (recherche par nom, code ou description ; autre levé ou tous ; ordre récents, plus proches de ma position, ou par nom). Bouton **Points** pour les séquences (touchés dans l'ordre), **Codes** pour la bibliothèque de Pcodes, **Saisir au clavier** au besoin.
+- **Azimut ou distance par deux points** : inscrire `4-7` (ou bouton **2 pts**) donne l'azimut ou la distance de 4 vers 7 ; `4-7+90` ajoute un angle à l'azimut. La formule du point garde la mention (ex. « Az 90°00′00.0″ (4-7+90) »).
 - **Code des points calculés** : 299 PCT (calculé sur le terrain) par défaut ; 300 PCB, 301 PCC ou autre code au choix.
 - Rayonnement (option par défaut) : on reste au point de départ ; sinon le nouveau point devient la station (cheminement).
 - Les points calculés, inscrits et importés sont **théoriques** (en italique) ; le CSV porte `Type_point` et `Formule` (ex. « 2PD A, B, D 10.000 depuis B » ou « Az-dist de S1, Az 45°00′00.0″, D 10.000 »).
