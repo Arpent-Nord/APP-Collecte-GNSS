@@ -45,6 +45,7 @@
 
   function onSentence(s) {
     if (s.type === 'GST') { state.gst = s; if (state.recorder && !state.recorder.done) state.recorder.feedGst(s); return; }
+    if (s.type === 'GSA') { if (s.pdop !== null && s.pdop !== undefined) { state.pdop = s.pdop; state.pdopAt = Date.now(); } return; }
     if (s.type !== 'GGA') return;
     state.gga = s; state.lastGgaAt = Date.now(); state.ggaCount++;
     logLine(s.raw);
@@ -325,7 +326,8 @@
       r.systeme = cv.hz.epsg ? 'EPSG:' + cv.hz.epsg : 'Geographiques';
       r.systemeAlti = cv.z !== null ? 'EPSG:10588' + (cv.vt.grid ? ' (' + cv.vt.grid + ')' : ' (separation fixe)') : 'Ellipsoidale';
     }
-    r.baseKm = baseKm(); r.baseId = baseIdNow();
+    r.baseKm = baseKm(); r.baseId = baseIdNow(); r.baseEcef = baseEcefNow();
+    r.pdop = state.pdop !== undefined && Date.now() - (state.pdopAt || 0) < 10000 ? state.pdop : null;
     r.corrSrc = corrSourceLabel(); r.ageMax = state.measAgeMax;
     var ageLim = numVal('kAgeMax', 5);
     if (r.n && r.ageMax !== null && r.ageMax !== undefined && r.ageMax > ageLim) {
@@ -391,7 +393,8 @@
       baseKm: r.baseKm, baseId: r.baseId, corrSrc: r.corrSrc, ageMax: r.ageMax,
       lat: r.lat, lon: r.lon, hEll: r.hEll, sigmaH: r.sigmaH, sigmaV: r.sigmaV, n: r.n, rejected: r.rejected,
       qualityLabel: (Nmea.FIX_LABELS[r.quality] || r.quality) + (r.ok ? '' : ' (hors critères)'),
-      pole: r.pole, apc: r.apc, recepteur: state.driver ? state.driver.label : '', start: r.start, end: r.end
+      pole: r.pole, apc: r.apc, recepteur: state.driver ? state.driver.label : '', start: r.start, end: r.end,
+      quality: r.quality, pdop: r.pdop, baseEcef: r.baseEcef
     };
     if (stake) { p.implante = stake.cible; p.type = 'mesure'; }
     points.push(p); save(STORE_POINTS, points);
@@ -420,6 +423,12 @@
     var b = state.base;
     if (!b || Date.now() - b.at > 120000) return null;
     return Ntrip.baselineKm(g.lat, g.lon, g.hEll, b.x, b.y, b.z);
+  }
+  /* Position de la base (ECEF) au moment de la mesure, pour l'export Flow 360. */
+  function baseEcefNow() {
+    if (radioMode()) { var rb = radioBase(); return rb ? { x: rb.x, y: rb.y, z: rb.z } : null; }
+    var b = state.base;
+    return b && Date.now() - b.at <= 120000 ? { x: b.x, y: b.y, z: b.z } : null;
   }
   function baseIdNow() {
     if (radioMode()) {
@@ -716,6 +725,7 @@
     $('ptEmpty').textContent = all ? 'Aucun point sur l\u2019appareil.' : 'Aucun point dans le travail ' + (cur || '(sans nom)') + '.';
     $('ptJobTh').style.display = all ? '' : 'none';
     $('btnExport').textContent = all ? 'Exporter tous les travaux (CSV)' : 'Exporter le travail en cours (CSV)';
+    $('btnExportFlow').textContent = all ? 'Exporter tous les travaux pour Flow 360' : 'Exporter pour Flow 360';
     $('ptBody').innerHTML = shown.map(function (x) {
       var p = x.p, i = x.i;
       var f3 = function (v) { return v === null || v === undefined ? '—' : v.toFixed(3); };
@@ -737,6 +747,21 @@
     var a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
     a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  /* Export au format « CSV personnalisé » d'Emlid Flow 360 (42 colonnes), pour l'import dans Flow 360. */
+  function exportFlow360() {
+    var cur = $('mLeve').value.trim(), all = $('ptAll').checked;
+    var list = all ? points : points.filter(function (p) { return (p.leve || '') === cur; });
+    if (!list.length) return;
+    var ss = ssValue(), a = ss ? Codes.arpenteur(ss) : null;
+    var csv = Flow360.toCsv(list, { author: a ? a.nom : (ss ? 'Arpenteur ' + ss : ''), convert: Proj.convert });
+    var name = (all ? 'tous_travaux' : (cur || 'collecte')).replace(/[^\w#-]+/g, '_') + '_FLOW360.csv';
+    // Sans BOM : fichier destiné à Flow 360, pas à Excel.
+    if (Native) { Native.saveFile(name, 'text/csv;nobom', csv); return; }
+    var el = document.createElement('a');
+    el.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    el.download = name; document.body.appendChild(el); el.click(); el.remove();
   }
 
   // ---------- Événements du module natif ----------
@@ -841,6 +866,7 @@
   $('btnDrop').addEventListener('click', dropPoint);
   $('btnRedo').addEventListener('click', redo);
   $('btnExport').addEventListener('click', exportCsv);
+  $('btnExportFlow').addEventListener('click', exportFlow360);
   $('ptAll').addEventListener('change', renderPoints);
   $('btnClear').addEventListener('click', function () {
     if (!points.length || !confirm('Effacer les ' + points.length + ' points de cet appareil?')) return;

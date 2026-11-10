@@ -816,11 +816,13 @@ details summary { cursor: pointer; font-weight: 600; }
       <p class="hint" id="ptEmpty">Aucun point pour l'instant.</p>
       <div class="row">
         <button class="btn primary" id="btnExport">Exporter en CSV</button>
+        <button class="btn" id="btnExportFlow">Exporter pour Flow 360</button>
         <button class="btn" id="btnExportCtl" style="display:none">Exporter les contrôles</button>
         <button class="btn danger" id="btnClear">Tout effacer</button>
       </div>
       <div class="msg" id="ptMsg" style="display:none"></div>
       <p class="hint">Le CSV contient les coordonnées planes et l'altitude du travail, ainsi que la latitude, la longitude et la hauteur ellipsoïdale dans le système des corrections reçues (SmartNet : NAD83(SCRS)).</p>
+      <p class="hint">« Exporter pour Flow 360 » produit le « CSV personnalisé » d'Emlid Flow 360 (42 colonnes) : le code (Pcode) va dans Description, les points mesurés sont « Global », les points inscrits, calculés ou importés sont « Local ». Le fichier est en UTF-8 sans BOM.</p>
     </div>
   </section>
   <div class="mode" id="modeInfo"></div>
@@ -829,6 +831,7 @@ details summary { cursor: pointer; font-weight: 600; }
 <script src="js/nmea.js"></script>
 <script src="js/drivers.js"></script>
 <script src="js/survey.js"></script>
+<script src="js/flow360.js"></script>
 <script src="js/proj.js"></script>
 <script src="js/ntrip.js"></script>
 <script src="js/codes-data.js"></script>

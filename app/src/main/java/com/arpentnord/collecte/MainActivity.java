@@ -143,7 +143,10 @@ public class MainActivity extends Activity {
     public void saveFile(String name, String mime, String content) {
         pendingContent = content;
         // BOM UTF-8 seulement pour les CSV (Excel) ; les fichiers de levé .txt (Civil 3D) n'en ont pas.
-        pendingBom = mime == null || !mime.startsWith("text/plain");
+        // « ;nobom » (ex. export Flow 360) : CSV sans BOM ; le suffixe est retiré du type MIME.
+        boolean noBom = mime != null && mime.endsWith(";nobom");
+        if (noBom) mime = mime.substring(0, mime.length() - ";nobom".length());
+        pendingBom = !noBom && (mime == null || !mime.startsWith("text/plain"));
         Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
         i.setType(mime == null || mime.isEmpty() ? "text/plain" : mime);

@@ -122,6 +122,14 @@ Onglet Récepteur, carte « Travail écran éteint » : option « Garder l'écra
 - Onglet Travail : **Ouvrir un travail de l'appareil** (liste avec date et nombre de points) et **Nouveau travail**.
 - Les calculs et sélecteurs travaillent dans le **travail en cours** : un point choisi dans un autre travail y est **importé** (avec confirmation) et garde sa **trace d'origine** (`Leve_origine`, `Point_origine` au CSV, conservées même après plusieurs copies). Deux points du même nom ne peuvent pas coexister dans un travail.
 - Onglet Points et export CSV : le travail en cours (option « tous les travaux »).
+
+### Export vers Emlid Flow 360 (2026-11-10)
+
+Emlid n'offre pas d'API pour les projets Flow 360 et n'en prévoit pas pour le moment (ticket #444197945570). Les levés passent donc par le « CSV personnalisé » de Flow 360.
+- Onglet Points › **Exporter pour Flow 360** → `<travail>_FLOW360.csv` (UTF-8 sans BOM), 42 colonnes dans l'ordre de l'export Flow 360 (`js/flow360.js`).
+- Pcode dans `Description` (`Code` vide) ; `Origin` = Global (mesuré) ou Local (inscrit, calculé, importé) ; `Antenna height` = canne + décalage, en m ; `Baseline` en m ; dates « AAAA-MM-JJ hh:mm:ss.s UTC-05:00 » ; `CS name` = « NAD83(CSRS) / MTM zone N + CGVD28 height » ; `Author` = arpenteur (reference.json).
+- RMS Est et Nord = précision H retenue / √2 ; `Lateral RMS` = précision H ; position de la base (plan et géographique) et PDOP notés pour les points mesurés à partir de cette version. Laissés vides : Tilt angle, GDOP, satellites par constellation, numéro de série.
+- Le même fichier se relit par 1 · Enregistre (lier ou copier).
 - Avertissement si le code d'arpenteur (SS) manque : les numéros AJJJSSNNN ne peuvent pas être produits.
 
 ## Calculs (COGO) — raccourcis à la Menarp

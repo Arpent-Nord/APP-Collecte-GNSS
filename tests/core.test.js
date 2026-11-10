@@ -546,4 +546,40 @@ test('implantation : écarts à la cible, avancer / droite, ligne (chaînage, d�
   near(I.headingFrom([{ e: 0, n: 0 }, { e: 1, n: 0 }]), Math.PI / 2, 1e-12);
 });
 
+test('export Flow 360 : 42 colonnes, Pcode en Description, Global / Local, antenne, dates, base, système', () => {
+  const F = require(path.join(www, 'flow360.js')), Ntrip = require(path.join(www, 'ntrip.js'));
+  assert.strictEqual(F.COLUMNS.length, 42);
+  assert.strictEqual(F.COLUMNS[0], 'Name'); assert.strictEqual(F.COLUMNS[41], 'Author');
+  // Base (station) reconstituée depuis l'ECEF des corrections.
+  const bx = Ntrip.geoToEcef(46.95, -71.25, 80.0);
+  const g = F.ecefToGeo(bx.x, bx.y, bx.z);
+  assert.ok(Math.abs(g.lat - 46.95) < 1e-9 && Math.abs(g.lon + 71.25) < 1e-9 && Math.abs(g.h - 80) < 1e-4);
+  const p = { leve: '261015SIMRC163', nom: '628810001', code: '296 1.1', type: 'mesure', est: 199628.352, nord: 5200289.558, alt: 200.581,
+    lat: 46.9471234567, lon: -71.2612345678, hEll: 172.412, sigmaH: 0.0141, sigmaV: 0.02, n: 25, quality: 4,
+    pole: 1.8, apc: 0.145, start: '2026-10-15T18:20:49.600Z', end: '2026-10-15T18:20:54.600Z', baseKm: 12.3456,
+    corrSrc: 'NTRIP qcvrsrtcm32', systeme: 'EPSG:2949', systemeAlti: 'EPSG:10588 (HT2_2010v70)', recepteur: 'Emlid Reach RX', baseEcef: bx };
+  const csv = F.toCsv([p, { nom: 'C1', code: '299 PCT', type: 'calcule', est: 1, nord: 2, alt: 3, systeme: 'EPSG:2949', systemeAlti: 'EPSG:10588 (HT2_2010v70)' }],
+    { offMin: -300, author: 'René Langevin', convert: Proj.convert });
+  const lines = csv.trim().split('\r\n'), col = (l, c) => l.split(',')[F.COLUMNS.indexOf(c)];
+  assert.strictEqual(lines.length, 3);
+  lines.forEach(l => assert.strictEqual(l.split(',').length, 42));
+  const r = lines[1];
+  assert.strictEqual(col(r, 'Code'), ''); assert.strictEqual(col(r, 'Description'), '296 1.1');
+  assert.strictEqual(col(r, 'Origin'), 'Global'); assert.strictEqual(col(r, 'Antenna height'), '1.945');
+  assert.strictEqual(col(r, 'Antenna height units'), 'm'); assert.strictEqual(col(r, 'Solution status'), 'FIX');
+  assert.strictEqual(col(r, 'Averaging start'), '2026-10-15 13:20:49.6 UTC-05:00');
+  assert.strictEqual(col(r, 'Baseline'), '12345.600'); assert.strictEqual(col(r, 'Mount point'), 'qcvrsrtcm32');
+  assert.strictEqual(col(r, 'CS name'), 'NAD83(CSRS) / MTM zone 7 + CGVD28 height');
+  assert.strictEqual(col(r, 'Lateral RMS'), '0.014'); assert.strictEqual(col(r, 'Samples'), '25');
+  assert.strictEqual(col(r, 'Base latitude'), '46.950000000');
+  const be = Proj.convert(46.95, -71.25, 80, { hz: '2949', vt: '10588-2010' });
+  assert.strictEqual(col(r, 'Base easting'), be.e.toFixed(3));
+  const c = lines[2];
+  assert.strictEqual(col(c, 'Origin'), 'Local'); assert.strictEqual(col(c, 'Antenna height'), ''); assert.strictEqual(col(c, 'Solution status'), '');
+  assert.strictEqual(col(c, 'Author'), 'René Langevin');
+  // Anciens points sans code de qualité : statut tiré du libellé.
+  assert.strictEqual(F.solution({ qualityLabel: 'RTK flottant (hors critères)' }), 'FLOAT');
+  assert.strictEqual(F.flowDate('2026-07-01T12:00:00.000Z', -240), '2026-07-01 08:00:00.0 UTC-04:00');
+});
+
 console.log(`\n${passed} tests réussis`);
