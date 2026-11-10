@@ -87,11 +87,15 @@ h1 { margin: 0; font-size: 20px; font-weight: 700; flex: 1; }
 .lctools button:disabled { opacity: .4; }
 .lcboxbar { display: flex; gap: 8px; align-items: flex-end; margin-top: 12px; }
 .lcboxbar label { flex: 1; }
-.lcbox { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; margin-top: 8px; }
+.lcbox { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; margin-top: 8px; }
 .lcbox button { position: relative; text-align: left; border: 1px solid var(--line); border-left: 6px solid var(--c, #888); border-radius: 8px; background: var(--surface);
-  padding: 7px 7px 6px; min-height: 58px; cursor: pointer; color: var(--ink); }
+  padding: 7px 7px 6px; min-height: 70px; cursor: pointer; color: var(--ink); }
 .lcbox button b { display: block; font-size: 17px; }
-.lcbox button small { display: block; font-size: 11px; color: var(--muted); line-height: 1.15; overflow: hidden; max-height: 26px; }
+.lcbox button small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; font-size: 12px; color: var(--muted); line-height: 1.2; overflow: hidden; overflow-wrap: anywhere; }
+.lcsug { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: var(--primary-soft); border: 1px solid var(--primary); }
+.lcsug .chip.best { border-color: var(--primary); border-width: 2px; }
+.chip.end { border-color: var(--warn); color: var(--warn); }
+.chip.resume { border-color: var(--ok); color: var(--ok); }
 .lcbox button .lns { position: absolute; top: 5px; right: 6px; font-size: 11px; font-weight: 700; color: var(--primary); }
 .lcbox button.sel { outline: 3px solid var(--primary); background: var(--primary-soft); }
 .lcbox.editing button { border-style: dashed; }
@@ -477,6 +481,7 @@ details summary { cursor: pointer; font-weight: 600; }
         <div class="chips" id="lcCtl"></div>
         <div class="chips" id="lcExtra"></div>
       </div>
+      <div class="lcsug" id="lcSug" hidden></div>
       <div class="lcdesc"><span class="hint">Prochain point</span> <b id="lcName"></b> <code id="lcDesc">—</code></div>
       <button class="btn primary big" id="lcMeasure" type="button" disabled>Mesurer</button>
     </div>
@@ -744,6 +749,7 @@ details summary { cursor: pointer; font-weight: 600; }
 <script src="js/app.js"></script>
 <script src="js/cogo-ui.js"></script>
 <script src="js/moteur-leve.js"></script>
+<script src="js/poursuite.js"></script>
 <script src="js/leve-codes.js"></script>
 </body>
 </html>

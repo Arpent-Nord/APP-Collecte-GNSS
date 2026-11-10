@@ -513,4 +513,22 @@ test('moteur de Validation de levé : strings, fermeture, anomalie, liaison mult
   assert.strictEqual(M.layerOf('526') !== undefined, true);
 });
 
+test('poursuite : ligne la plus près dans le prolongement, ambiguïté, courbe, marge anti-saut', () => {
+  const P = require(path.join(www, 'poursuite.js'));
+  const c = [{ key: '185|1', pts: [[0, 0], [10, 0]] }, { key: '185|2', pts: [[0, 10], [10, 10]] }, { key: '526|1', pts: [[0, 30]] }];
+  assert.strictEqual(P.rank(c, [15, 9.6]).best.key, '185|2');
+  assert.strictEqual(P.rank(c, [15, 0.4]).best.key, '185|1');
+  assert.strictEqual(P.rank(c, [14, 5]).ambiguous, true);                     // à mi-chemin : on ne choisit pas
+  assert.strictEqual(P.rank(c, [2, 29]).best.key, '526|1');                  // string d'un seul point : la distance
+  // courbe : cercle de rayon 20 centré à l'origine, parcouru en sens antihoraire ; on se tient sur l'arc plus loin
+  const arc = a => [20 * Math.cos(a), 20 * Math.sin(a)];
+  const r = P.evalOne({ key: 'x', curve: true, pts: [arc(0), arc(0.2), arc(0.4)] }, arc(0.7));
+  assert.strictEqual(r.mode, 'courbe'); near(r.lat, 0, 1e-9); near(r.along, 6, 1e-9);
+  // marge : la suggestion précédente est gardée tant qu'elle reste à 0,3 m près
+  const c2 = [{ key: 'a', pts: [[0, 0], [10, 0]] }, { key: 'b', pts: [[0, 0.5], [10, 0.5]] }];
+  assert.strictEqual(P.rank(c2, [12, 0.15]).best.key, 'a');
+  assert.strictEqual(P.rank(c2, [12, 0.3], 'a').best.key, 'a');
+  assert.strictEqual(P.describe({ d: 3.24, lat: 0.2, along: 3, mode: 'ligne' }), '3,2 m · dans l’axe');
+});
+
 console.log(`\n${passed} tests réussis`);

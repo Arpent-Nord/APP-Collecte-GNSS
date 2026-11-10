@@ -38,11 +38,22 @@
     var A;
     try { A = M.analyze(rows, M.CODES, { dup: 0.005, maxSeg: 60 }); } catch (e) { A = { lines: [], issues: [], cmds: [] }; }
     // ligne d'un seul point : normal pendant qu'on la lève (dernier point du travail ou string actif)
-    var lastRow = rows.length - 1, act = st.code ? st.code + '|' + st.str[st.code] : '';
-    A.issues = A.issues.filter(function (x) { return !(x.kind === 'single' && (x.row === lastRow || x.key === act)); });
+    var lastRow = rows.length - 1, act = st.code ? st.code + '|' + st.str[st.code] : '', closed = {};
+    A.lines.forEach(function (L) { if (L.closed) closed[L.key] = 1; });
+    st.curveKeys = {};
+    A.issues.forEach(function (x) { if (x.kind === 'curveOpen' && !closed[x.key]) st.curveKeys[x.key] = 1; });
+    // pendant le levé : ligne d'un point en cours et courbe pas encore finie (.4) sont normales
+    A.issues = A.issues.filter(function (x) {
+      if (x.kind === 'single' && (x.row === lastRow || x.key === act)) return false;
+      if (x.kind === 'curveOpen' && !closed[x.key] && !isDone(x.key)) return false;
+      return true;
+    });
     st.rows = rows; st.idx = idx; st.A = A;
     return A;
   }
+  /* Lignes terminées (TERMINER) : gardées au journal du travail, sans effet sur le fichier. */
+  function fini() { var m = Ctx.jobMeta(); if (!m) return {}; m.fini = m.fini || {}; return m.fini; }
+  function isDone(key) { return !!fini()[key]; }
   /* Lignes d'un code : par string, la dernière ligne (ouverte ou fermée) et son nombre de points. */
   function stringsOf(code) {
     var out = {};
@@ -57,6 +68,7 @@
         if (String(l.pcode) === String(code) && !out[l.str]) out[l.str] = { str: l.str, n: 1, open: true, last: k, line: null };
       });
     });
+    Object.keys(out).forEach(function (k) { out[k].done = out[k].open && isDone(code + '|' + k); });
     return Object.keys(out).map(function (k) { return out[k]; }).sort(function (a, b) { return (+a.str) - (+b.str); });
   }
   function nextStr(code) { var m = 0; stringsOf(code).forEach(function (s) { m = Math.max(m, +s.str || 0); }); return String(m + 1); }
@@ -82,7 +94,7 @@
     var b = box();
     if (!b.codes.length) g.innerHTML = '<p class="hint">Boîte vide : « Modifier » puis « + Code » pour la remplir.</p>';
     b.codes.forEach(function (code, k) {
-      var c = Codes.byCode(code), lines = st.editing ? [] : stringsOf(code), open = lines.filter(function (s) { return s.open; }).length;
+      var c = Codes.byCode(code), lines = st.editing ? [] : stringsOf(code), open = lines.filter(function (s) { return s.open && !s.done; }).length;
       var bt = document.createElement('button'); bt.type = 'button';
       bt.className = code === st.code && !st.editing ? 'sel' : '';
       bt.style.setProperty('--c', M.colorOf(code) === '#ffffff' ? '#777' : M.colorOf(code));
@@ -144,7 +156,7 @@
   function pickCode(code) {
     st.code = code; st.solo = false;
     if (!st.str[code]) {
-      var open = stringsOf(code).filter(function (s) { return s.open; });
+      var open = stringsOf(code).filter(function (s) { return s.open && !s.done; });
       if (open.length) { st.str[code] = open[open.length - 1].str; st.ctl[code] = ''; }
       else { st.str[code] = nextStr(code); st.ctl[code] = '1'; }
     }
@@ -157,12 +169,12 @@
     var c = Codes.byCode(code), lines = stringsOf(code), cur = st.str[code], ctl = st.ctl[code] || '';
     $('lcStrCode').textContent = code + (c ? ' ' + c.aph + ' · ' + c.description : '');
     var curInfo = lines.filter(function (s) { return s.str === cur; })[0];
-    $('lcStrInfo').textContent = st.solo ? 'Point seul (sans ligne)' : 'Ligne ' + cur + (curInfo ? ' · ' + curInfo.n + ' pt' + (curInfo.open ? ' · ouverte' : ' · fermée') : ' · nouvelle');
+    $('lcStrInfo').textContent = st.solo ? 'Point seul (sans ligne)' : 'Ligne ' + cur + (curInfo ? ' · ' + curInfo.n + ' pt' + (curInfo.done ? ' · terminée : REPRENDRE pour continuer' : curInfo.open ? ' · ouverte' : ' · fermée') : ' · nouvelle');
     var L = $('lcLines'); L.innerHTML = '';
     lines.forEach(function (s) {
       var b = document.createElement('button'); b.type = 'button';
-      b.className = 'chip ' + (s.open ? 'open' : 'closed') + (s.str === cur && !st.solo ? ' sel' : '');
-      b.textContent = 'L' + s.str + ' · ' + s.n + (s.open ? '' : ' (fermée)');
+      b.className = 'chip ' + (s.open && !s.done ? 'open' : 'closed') + (s.str === cur && !st.solo ? ' sel' : '');
+      b.textContent = 'L' + s.str + ' · ' + s.n + (s.done ? ' (terminée)' : s.open ? '' : ' (fermée)');
       b.addEventListener('click', function () { st.solo = false; st.str[code] = s.str; st.ctl[code] = s.open ? '' : '1'; refresh(); });
       L.appendChild(b);
     });
@@ -173,6 +185,13 @@
     var sb = document.createElement('button'); sb.type = 'button'; sb.className = 'chip' + (st.solo ? ' sel' : ''); sb.textContent = 'Point seul';
     sb.addEventListener('click', function () { st.solo = !st.solo; refresh(); });
     L.appendChild(sb);
+    if (curInfo && curInfo.open && !st.solo) {
+      var tb = document.createElement('button'); tb.type = 'button'; tb.className = 'chip ' + (curInfo.done ? 'resume' : 'end');
+      tb.textContent = curInfo.done ? 'REPRENDRE L' + cur : 'TERMINER L' + cur;
+      tb.title = curInfo.done ? 'Remettre la ligne en poursuite' : 'La ligne s\u2019arrête ici : plus de point attendu';
+      tb.addEventListener('click', function () { if (curInfo.done) reprendre(code, cur); else terminer(code, cur); });
+      L.appendChild(tb);
+    }
     var C = $('lcCtl'); C.innerHTML = '';
     if (!st.solo) CTL.forEach(function (x) {
       var b = document.createElement('button'); b.type = 'button';
@@ -199,6 +218,24 @@
     });
     var ab = document.createElement('button'); ab.type = 'button'; ab.className = 'chip'; ab.textContent = '+ Lier aussi à une autre ligne';
     ab.addEventListener('click', addExtra); X.appendChild(ab);
+  }
+  function journal(why) { var m = Ctx.jobMeta(); if (!m) return; m.journal = m.journal || []; m.journal.push({ t: new Date().toLocaleString('fr-CA'), why: why }); }
+  function terminer(code, str) {
+    fini()[code + '|' + str] = 1; journal('Ligne ' + code + ' / ' + str + ' terminée'); Ctx.saveJobs();
+    if (st.lock === code + '|' + str) st.lock = null;
+    var open = stringsOf(code).filter(function (s) { return s.open && !s.done; });
+    if (open.length) { st.str[code] = open[open.length - 1].str; st.ctl[code] = ''; }
+    else { st.str[code] = nextStr(code); st.ctl[code] = '1'; }
+    refresh();
+  }
+  function reprendre(code, str) {
+    delete fini()[code + '|' + str]; journal('Ligne ' + code + ' / ' + str + ' reprise'); Ctx.saveJobs();
+    activate(code, str);
+  }
+  /* Rend une ligne active : son code, son string, contrôle « Suivant ». */
+  function activate(code, str) {
+    st.code = String(code); st.str[st.code] = String(str); st.ctl[st.code] = ''; st.solo = false; st.extra = [];
+    refresh();
   }
   /* Liaison multiple (« _ ») : le point appartient aussi à une autre ligne ouverte du travail (ex. 526 1.2_526 2.1). */
   function addExtra() {
@@ -232,11 +269,11 @@
   // ---------- Mise à jour générale ----------
   function refresh(fit) {
     if (!st.on) return;
-    analyze(); renderBoxSel(); renderCodes(); renderStr(); renderAnom();
+    analyze(); renderBoxSel(); renderCodes(); renderStr(); renderAnom(); st.sugHtml = ''; renderSug();
     var d = composeDesc();
     if (d && d !== Ctx.desc()) Ctx.setDesc(d);
     $('lcDesc').textContent = d || '—'; $('lcName').textContent = Ctx.pointName();
-    var bm = $('btnMeasure'); $('lcMeasure').disabled = bm.disabled || !d; $('lcMeasure').textContent = bm.textContent;
+    measureState();
     $('lcUndo').disabled = !st.hist.length;
     if (fit || !st.view || !st.userView) fitView();
     else if (st.rows.length) {   // le dernier point levé reste visible
@@ -245,7 +282,57 @@
     }
     draw();
   }
+  function activeDone() { return st.code && !st.solo && isDone(st.code + '|' + st.str[st.code]); }
+  function measureState() {
+    var bm = $('btnMeasure'); $('lcMeasure').disabled = bm.disabled || !composeDesc() || activeDone(); $('lcMeasure').textContent = bm.textContent;
+  }
   $('lcMeasure').addEventListener('click', function () { $('btnMeasure').click(); });
+
+  // ---------- Poursuite : quelle ligne ouverte suis-je en train de rejoindre ? ----------
+  function cands() {
+    var out = {}, inLine = {};
+    (st.A ? st.A.lines : []).forEach(function (L) {
+      inLine[L.key] = 1;
+      if (L.type !== 'line' || L.closed || isDone(L.key)) return;
+      out[L.key] = { key: L.key, pcode: L.pcode, str: L.str, curve: !!st.curveKeys[L.key], pts: L.pts.map(function (i) { return [st.rows[i].e, st.rows[i].n]; }) };
+    });
+    st.rows.forEach(function (r) {   // string débuté sur un seul point
+      (M.parseDesc(r.desc).links || []).forEach(function (l) {
+        var key = l.pcode + '|' + l.str;
+        if (inLine[key] || isDone(key) || (l.ctrl || '').split('.').indexOf('2') >= 0) return;
+        out[key] = { key: key, pcode: l.pcode, str: l.str, curve: false, pts: [[r.e, r.n]] };
+      });
+    });
+    return out;
+  }
+  function lbl(key) { return key.replace('|', ' L'); }
+  function renderSug() {
+    var box4 = $('lcSug'), me = Ctx.here(), html = '';
+    if (!st.on || !me || !window.Poursuite) { box4.hidden = true; st.sugHtml = ''; return; }
+    var C = cands(), act = st.code && !st.solo ? st.code + '|' + st.str[st.code] : '';
+    if (st.lock && !C[st.lock]) st.lock = null;   // ligne fermée ou terminée : objectif atteint
+    if (st.lock) {
+      var r = Poursuite.evalOne(C[st.lock], [me.e, me.n]);
+      html = '<span class="hint">Objectif</span> <b>' + esc(lbl(st.lock)) + '</b> <span>' + esc(Poursuite.describe(r)) + '</span>' +
+        (st.lock !== act ? ' <button type="button" class="chip sel" data-k="' + esc(st.lock) + '">Activer</button>' : '') +
+        ' <button type="button" class="chip" data-free="1">Libérer</button>';
+    } else {
+      var keys = Object.keys(C);
+      if (!keys.length) { box4.hidden = true; st.sugHtml = ''; return; }
+      var R = Poursuite.rank(keys.map(function (k) { return C[k]; }), [me.e, me.n], st.sugKey);
+      if (!R.best) { box4.hidden = true; st.sugHtml = ''; return; }
+      st.sugKey = R.best.key;
+      html = '<span class="hint">' + (R.ambiguous ? 'Ambigu' : 'Suggéré') + '</span>' + R.list.slice(0, 3).map(function (x, i) {
+        return '<button type="button" class="chip' + (i === 0 && !R.ambiguous ? ' best' : '') + (x.key === act ? ' sel' : '') + '" data-k="' + esc(x.key) + '">' +
+          '<b>' + esc(lbl(x.key)) + '</b> ' + esc(Poursuite.describe(x)) + (x.key === act ? ' ✓' : '') + '</button>';
+      }).join('');
+    }
+    box4.hidden = false;
+    if (html === st.sugHtml) return;
+    st.sugHtml = html; box4.innerHTML = html;
+    box4.querySelectorAll('[data-k]').forEach(function (b) { b.addEventListener('click', function () { var k = b.dataset.k.split('|'); activate(k[0], k[1]); }); });
+    var fr = box4.querySelector('[data-free]'); if (fr) fr.addEventListener('click', function () { st.lock = null; st.sugHtml = ''; renderSug(); draw(); });
+  }
   // nouveau point conservé ou base modifiée
   document.addEventListener('cg:points', function () {
     if (!st.on) return;
@@ -255,7 +342,7 @@
   });
   setInterval(function () {
     if (!st.on || document.hidden) return;
-    var bm = $('btnMeasure'); $('lcMeasure').disabled = bm.disabled || !composeDesc(); $('lcMeasure').textContent = bm.textContent;
+    measureState(); renderSug();
     $('lcName').textContent = Ctx.pointName(); draw();
   }, 1000);
 
@@ -295,15 +382,43 @@
     var m = Math.pow(10, Math.floor(Math.log10(80 / st.view.k))), len = [1, 2, 5, 10].map(function (f) { return f * m; }).filter(function (v) { return v * st.view.k < 120; }).pop() || m;
     ctx.strokeStyle = '#9aaba9'; ctx.fillStyle = '#9aaba9'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(10, s.h - 10); ctx.lineTo(10 + len * st.view.k, s.h - 10); ctx.stroke();
     ctx.font = '11px Barlow, sans-serif'; ctx.fillText(len + ' m', 12, s.h - 14);
+    var labels = []; st.hit = [];
     var A = st.A || { lines: [], issues: [] }, step = Math.max(0.05, 2 / st.view.k);
     var errRows = {}; A.issues.forEach(function (x) { if (x.sev === 'err') errRows[x.row] = 1; });
     A.lines.forEach(function (L) {
       var col = M.colorOf(L.pcode), vv;
       try { vv = M.lineVerts(L, st.rows, step).verts; } catch (e) { return; }
-      var act = String(L.pcode) === String(st.code) && L.str === st.str[st.code];
+      var act = String(L.pcode) === String(st.code) && L.str === st.str[st.code], poly = vv.map(function (v) { return toScr(v[0], v[1]); });
+      if (st.lock === L.key) { ctx.strokeStyle = 'rgba(77,208,225,.45)'; ctx.lineWidth = 9; ctx.beginPath(); poly.forEach(function (p, k) { if (k) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); ctx.stroke(); }
       ctx.strokeStyle = col; ctx.lineWidth = act ? 3.5 : 2; ctx.beginPath();
-      vv.forEach(function (v, k) { var p = toScr(v[0], v[1]); if (k) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); });
-      ctx.stroke();
+      if (isDone(L.key)) ctx.setLineDash([2, 3]);
+      poly.forEach(function (p, k) { if (k) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); });
+      ctx.stroke(); ctx.setLineDash([]);
+      st.hit.push({ key: L.key, pcode: L.pcode, str: L.str, closed: L.closed, poly: poly });
+      labels.push({ txt: L.pcode + '_' + L.str, col: col, poly: poly });
+    });
+    // étiquettes « 185_2 » le long des lignes : plus on zoome, plus il y en a
+    ctx.font = 'bold 11px Barlow, sans-serif';
+    labels.forEach(function (o) {
+      var P = o.poly, tot = 0, seg = [];
+      for (var i = 1; i < P.length; i++) { var l = Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); seg.push(l); tot += l; }
+      if (tot < 30) return;
+      var every = 220, marks = [];
+      if (tot < every) marks.push(tot / 2); else for (var m2 = every / 2; m2 < tot; m2 += every) marks.push(m2);
+      marks.forEach(function (at) {
+        var acc = 0;
+        for (var j = 0; j < seg.length; j++) {
+          if (acc + seg[j] >= at) {
+            var f = (at - acc) / (seg[j] || 1), x = P[j][0] + (P[j + 1][0] - P[j][0]) * f, y = P[j][1] + (P[j + 1][1] - P[j][1]) * f;
+            if (x < 0 || y < 0 || x > s.w || y > s.h) return;
+            var w = ctx.measureText(o.txt).width + 6;
+            ctx.fillStyle = 'rgba(17,24,26,.85)'; ctx.fillRect(x - w / 2, y - 8, w, 15);
+            ctx.fillStyle = o.col === '#ffffff' ? '#e6eeed' : o.col; ctx.fillText(o.txt, x - w / 2 + 3, y + 4);
+            return;
+          }
+          acc += seg[j];
+        }
+      });
     });
     // points
     st.rows.forEach(function (r, k) {
@@ -391,11 +506,36 @@
   function endTool() { st.tool = null; st.picks = []; document.querySelectorAll('#lcTools [data-t]').forEach(function (x) { x.classList.remove('on'); }); }
   function tap(x, y) {
     var k = nearest(x, y);
-    if (!st.tool) { if (k >= 0) { var r = st.rows[k]; toolMsg(r.name + ' · ' + (r.desc || '(sans description)') + ' · Z ' + r.z.toFixed(3)); st.flash = k; draw(); } return; }
+    if (!st.tool) {
+      var r = k >= 0 ? st.rows[k] : null, pd = r ? Math.hypot(toScr(r.e, r.n)[0] - x, toScr(r.e, r.n)[1] - y) : 99, L = lineAt(x, y);
+      if (L && pd > 10) return pickLine(L);
+      if (r) { toolMsg(r.name + ' · ' + (r.desc || '(sans description)') + ' · Z ' + r.z.toFixed(3)); st.flash = k; draw(); }
+      return;
+    }
     if (k < 0) return;
     if (st.picks.indexOf(k) >= 0) return;
     st.picks.push(k); draw();
     if (st.picks.length >= NEED[st.tool]) apply(st.tool, st.picks.slice());
+  }
+  /* Ligne sous le doigt (14 px) : la plus proche. */
+  function lineAt(x, y) {
+    var best = null, bd = 14;
+    (st.hit || []).forEach(function (h) {
+      for (var i = 1; i < h.poly.length; i++) {
+        var a = h.poly[i - 1], b = h.poly[i], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+        var t = l2 ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / l2)) : 0;
+        var d = Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy);
+        if (d < bd) { bd = d; best = h; }
+      }
+    });
+    return best;
+  }
+  /* Toucher une ligne : ouverte = objectif fixé et ligne active ; fermée ou terminée = information. */
+  function pickLine(h) {
+    if (h.closed) { toolMsg('Ligne ' + h.pcode + '_' + h.str + ' fermée.'); return; }
+    if (isDone(h.key)) { activate(h.pcode, h.str); toolMsg('Ligne ' + h.pcode + '_' + h.str + ' terminée : REPRENDRE pour la continuer.', 'warn'); return; }
+    st.lock = h.key; activate(h.pcode, h.str);
+    toolMsg('Objectif : ' + h.pcode + '_' + h.str + '. La suggestion se tait jusqu\u2019à « Libérer ».', 'ok');
   }
   function P(k) { return Ctx.points()[st.idx[k]]; }
   function snap(ks) { return ks.map(function (k) { var p = P(k); return { p: p, before: JSON.stringify(p) }; }); }
@@ -598,6 +738,6 @@
     b.addEventListener('click', exportLeve);
   })();
 
-  window.LeveCodes = { active: function () { return st.on; }, refresh: refresh, exportLeve: exportLeve, _st: st };
+  window.LeveCodes = { active: function () { return st.on; }, cands: cands, activate: activate, lineAt: lineAt, refresh: refresh, exportLeve: exportLeve, _st: st };
   setMode(!!S.lcMode);
 })();
