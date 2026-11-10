@@ -385,7 +385,7 @@
     };
     points.push(p); save(STORE_POINTS, points);
     rememberCode(Codes.parseDesc(p.code).base);
-    afterPointCode();
+    if (!(window.LeveCodes && LeveCodes.active())) afterPointCode();
     $('mNom').value = settings.jNum === 'libre' ? Survey.nextPointName(p.nom) : (autoPointName() || Survey.nextPointName(p.nom));
     $('mNote').value = '';
     persistFields();
@@ -697,6 +697,7 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function renderPoints() {
     fillBasePoints(); if (window.AppCtx) renderJobBar();
+    document.dispatchEvent(new Event('cg:points'));
     var all = $('ptAll').checked, cur = $('mLeve').value.trim();
     var shown = []; points.forEach(function (p, i) { if (all || (p.leve || '') === cur) shown.push({ p: p, i: i }); });
     $('nbPoints').textContent = shown.length ? '(' + shown.length + ')' : '';
@@ -783,6 +784,7 @@
           var pm = $('ptMsg'); pm.style.display = 'block';
           pm.className = 'msg ' + (ev.ok ? 'ok' : 'warn');
           pm.textContent = ev.ok ? 'Fichier enregistré.' : ('Enregistrement annulé ou impossible. ' + (ev.msg || ''));
+          document.dispatchEvent(new CustomEvent('cg:file', { detail: { ok: !!ev.ok } }));
           break;
       }
     }
@@ -971,6 +973,14 @@
     job: job,
     leve: function () { return $('mLeve').value.trim(); },
     writable: jobWritable, jobPoints: jobPoints,
+    /* Enregistre la base de points après une correction faite sur place (outils du levé par codes). */
+    savePoints: function () { save(STORE_POINTS, points); renderPoints(); },
+    jobMeta: function (name) { name = name || $('mLeve').value.trim(); registerJob(name); return jobs[name]; },
+    saveJobs: function () { save(STORE_JOBS, jobs); },
+    setDesc: function (d) { $('mCode').value = d; onDescEdit(); },
+    desc: function () { return $('mCode').value.trim(); },
+    pointName: function () { return $('mNom').value.trim(); },
+    isNative: !!Native,
     /* Ajoute des points (calculés, inscrits, importés) à la base de l'appareil. */
     addPoints: function (list) {
       list.forEach(function (p) { points.push(p); });
@@ -991,7 +1001,7 @@
     saveText: function (name, mime, content) {
       if (Native) { Native.saveFile(name, mime, content); return; }
       var a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob(['\uFEFF' + content], { type: mime }));
+      a.href = URL.createObjectURL(new Blob([(/csv/.test(mime) ? '\uFEFF' : '') + content], { type: mime }));
       a.download = name; document.body.appendChild(a); a.click(); a.remove();
     },
     esc: esc, settings: settings, save: function () { save(STORE_SETTINGS, settings); },

@@ -144,6 +144,19 @@ Onglet **Calculs** : taper le numéro (ou toucher le bouton). Les numéros repre
 - Rayonnement (option par défaut) : on reste au point de départ ; sinon le nouveau point devient la station (cheminement).
 - Les points calculés, inscrits et importés sont **théoriques** (en italique) ; le CSV porte `Type_point` et `Formule` (ex. « 2PD A, B, D 10.000 depuis B » ou « Az-dist de S1, Az 45°00′00.0″, D 10.000 »).
 
+## Levé par codes (strings en direct)
+
+Onglet **Mesure → Levé par codes**. Même mesure que « point par point » (critères, moyenne, corrections) ; seule la description change de façon.
+
+- **Boîtes de codes nommées** (Route, Bâtiment…), ajustables au terrain : « Modifier » → toucher un code pour le remplacer, le retirer ou le déplacer ; « + Code » ; « Nouvelle boîte » ; « Selon la nature » bâtit une boîte avec les codes les plus utilisés dans les levés de même nature (NAT) sur l'appareil.
+- **Suivi des strings** à la Leica : toucher un code montre ses lignes (ouvertes, fermées), « + Nouvelle ligne », « Point seul », et les contrôles .1 .2 .3 .5 .4 .6 (combinés .1.3, .1.6, .4.2). La description `Pcode String.Contrôle` se compose seule ; après le point, le contrôle retombe à « Suivant » et une fermeture (.2) prépare la ligne suivante (.1). « Lier aussi à » ajoute une liaison multiple (`526 1.2_526 2.1`).
+- **Croquis en direct** aux couleurs des calques Arpent-Nord, avec la position du récepteur et le segment à venir (pointillé) ; Tout, Moi, zoom, numéros ; pincer et glisser.
+- **Anomalies en direct** (moteur de Validation de levé : lignes d'un point, croisements, fermetures courtes, doublons…) ; toucher pour centrer.
+- **Outils de correction au toucher**, mêmes règles que Validation de levé : INV PTS, INV LIGNE, FERMER, LIER, DÉLIER, UNIR, DESCR., EFFACER, ANNULER. Seulement dans le travail du jour ; chaque correction garde la valeur d'origine et s'inscrit au journal du travail.
+- **Export** (onglet Points → « Exporter le levé ») : `AAMMJJSECT#NATSS.txt` (brut, valeurs d'origine) et `AAMMJJSECT#NATSS_MODIF.txt` (corrigé, sans les points effacés), format P,N,E,Z,D sans en-tête (NDA-001, 6.6 et 10.1), prêts pour Validation de levé et la base de données Survey de Civil 3D.
+
+Le moteur `js/moteur-leve.js` est extrait de Validation de levé par `node tools/maj-moteur-leve.js <index.html de validation-leve>` : relancer après chaque nouvelle version de l'outil de bureau.
+
 ## Corrections par radio (LoRa, UHF) ou modem du récepteur
 
 Onglet Récepteur, carte « Corrections RTK », **Source des corrections** :

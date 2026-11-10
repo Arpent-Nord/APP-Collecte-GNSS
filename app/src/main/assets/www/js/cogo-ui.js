@@ -638,5 +638,5 @@
   ['c3Az1', 'c3Az2', 'c3D1', 'c3D2'].forEach(function (id) { attach(id, 'pair', '2 pts', false); });
   ['c1Code', 'c3Code', 'c2Code'].forEach(function (id) { attach(id, 'code', 'Codes', false); });
 
-  window.CogoUi = { parsePointFile: parsePointFile };
+  window.CogoUi = { openPicker: openPicker,  parsePointFile: parsePointFile };
 })();

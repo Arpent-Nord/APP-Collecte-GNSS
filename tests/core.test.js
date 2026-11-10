@@ -499,4 +499,18 @@ test('séquences de points : plages, liste, zéros conservés', () => {
   assert.deepStrictEqual(Cogo.parseSequence('B1 CENT'), ['B1', 'CENT']);
 });
 
+test('moteur de Validation de levé : strings, fermeture, anomalie, liaison multiple', () => {
+  const vm = require('vm'), fs = require('fs'), sb = { window: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(www, 'moteur-leve.js'), 'utf8'), sb);
+  const M = sb.window.MoteurLeve;
+  const rows = [['526 1.1', 0, 0], ['526 1', 10, 0], ['526 1', 10, 10], ['526 1.2_526 2.1', 0, 10], ['526 2', 0, 20], ['185 1.1', 5, 5]]
+    .map((a, i) => ({ i, name: String(i + 1), e: a[1], n: a[2], z: 0, desc: a[0], xyz: [] }));
+  const A = M.analyze(rows, M.CODES, { dup: 0.005, maxSeg: 60 });
+  assert.strictEqual(A.lines.map(L => L.key + (L.closed ? ' f' : '') + ':' + L.pts.join('-')).join(' ; '), '526|1 f:0-1-2-3 ; 526|2:3-4');
+  assert.ok(A.issues.some(x => x.kind === 'single' && x.row === 5));
+  assert.strictEqual(M.addLinkDesc('526 1', { pcode: '185', str: '2', ctrl: '1' }), '526 1_185 2.1');
+  assert.strictEqual(M.patchLinkDesc('526 1.2', '526|1', x => { x.ctrl = null; }), '526 1');
+  assert.strictEqual(M.layerOf('526') !== undefined, true);
+});
+
 console.log(`\n${passed} tests réussis`);

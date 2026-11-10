@@ -31,6 +31,7 @@ public class MainActivity extends Activity {
     private WebView web;
     private GnssBridge bridge;
     private String pendingContent;
+    private boolean pendingBom = true;
     private ValueCallback<Uri[]> fileCallback;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
@@ -137,6 +138,8 @@ public class MainActivity extends Activity {
     /** Ouvre le sélecteur Android : l'utilisateur choisit le dossier (Téléchargements, OneDrive, SharePoint…). */
     public void saveFile(String name, String mime, String content) {
         pendingContent = content;
+        // BOM UTF-8 seulement pour les CSV (Excel) ; les fichiers de levé .txt (Civil 3D) n'en ont pas.
+        pendingBom = mime == null || !mime.startsWith("text/plain");
         Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
         i.setType(mime == null || mime.isEmpty() ? "text/plain" : mime);
@@ -167,7 +170,7 @@ public class MainActivity extends Activity {
         Uri uri = data.getData();
         try (OutputStream os = getContentResolver().openOutputStream(uri)) {
             if (os == null) throw new IllegalStateException("flux indisponible");
-            os.write(new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF}); // BOM UTF-8 pour Excel
+            if (pendingBom) os.write(new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF}); // BOM UTF-8 pour Excel
             os.write(content.getBytes(StandardCharsets.UTF_8));
             bridge.onFileSaved(true, "");
         } catch (Exception e) {

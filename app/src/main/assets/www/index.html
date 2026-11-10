@@ -69,9 +69,46 @@ h1 { margin: 0; font-size: 20px; font-weight: 700; flex: 1; }
 .cgnum { width: 72px; }
 .cgnum input { font-size: 20px; font-weight: 700; text-align: center; }
 .cgpane { display: none; }
+.modesw { display: flex; gap: 0; margin-bottom: 12px; border: 1px solid var(--primary); border-radius: 10px; overflow: hidden; }
+.modesw button { flex: 1; padding: 10px; border: 0; background: var(--surface); color: var(--primary); font-weight: 700; font-size: 15px; cursor: pointer; }
+.modesw button.on { background: var(--primary); color: var(--primary-ink); }
+.lcsketch { position: relative; height: 46vh; min-height: 240px; border-radius: 8px; overflow: hidden; background: #11181a; touch-action: none; }
+.lcsketch canvas { width: 100%; height: 100%; display: block; }
+.lcmap-btns { position: absolute; top: 6px; right: 6px; display: flex; flex-direction: column; gap: 5px; }
+.lcmap-btns button { min-width: 40px; height: 36px; border-radius: 7px; border: 1px solid #3a4a4c; background: rgba(20,28,30,.85); color: #e6eeed; font-weight: 700; font-size: 14px; cursor: pointer; }
+.lcmap-btns button.on { background: #0b6e69; }
+.lcanom { position: absolute; left: 6px; top: 6px; right: 56px; background: rgba(20,28,30,.88); color: #ffd27a; border-radius: 7px; padding: 6px 9px; font-size: 13px; max-height: 40%; overflow-y: auto; }
+.lcanom b { color: #fff; }
+.lcanom .err { color: #ff8a80; }
+.lcanom button { background: none; border: 0; color: inherit; text-align: left; padding: 3px 0; width: 100%; font-size: 13px; cursor: pointer; }
+.lctools { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.lctools button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 6px; padding: 7px 8px; font-size: 12px; font-weight: 700; letter-spacing: .3px; cursor: pointer; }
+.lctools button.on { background: #f2c94c; color: #222; border-color: #c9a227; }
+.lctools button:disabled { opacity: .4; }
+.lcboxbar { display: flex; gap: 8px; align-items: flex-end; margin-top: 12px; }
+.lcboxbar label { flex: 1; }
+.lcbox { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; margin-top: 8px; }
+.lcbox button { position: relative; text-align: left; border: 1px solid var(--line); border-left: 6px solid var(--c, #888); border-radius: 8px; background: var(--surface);
+  padding: 7px 7px 6px; min-height: 58px; cursor: pointer; color: var(--ink); }
+.lcbox button b { display: block; font-size: 17px; }
+.lcbox button small { display: block; font-size: 11px; color: var(--muted); line-height: 1.15; overflow: hidden; max-height: 26px; }
+.lcbox button .lns { position: absolute; top: 5px; right: 6px; font-size: 11px; font-weight: 700; color: var(--primary); }
+.lcbox button.sel { outline: 3px solid var(--primary); background: var(--primary-soft); }
+.lcbox.editing button { border-style: dashed; }
+.lcedit { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.lcstr { margin-top: 10px; padding: 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+.lcstrhead b { font-size: 16px; margin-right: 8px; }
+.lcstr .chips { margin-top: 6px; }
+.chip.open { border-color: var(--ok); }
+.chip.closed { opacity: .55; }
+.lcdesc { margin: 10px 0 8px; font-size: 15px; }
+.lcdesc code { font-size: 17px; font-weight: 700; color: var(--primary); background: var(--primary-soft); padding: 2px 8px; border-radius: 6px; }
+body.codes-mode .pp-only { display: none !important; }
+body.codes-mode #critCard { display: none; }
+body.codes-mode #btnMeasure { display: none; }
 .pkbtn { white-space: nowrap; }
 .pk { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.35); display: flex; align-items: flex-end; justify-content: center; }
-.pk[hidden] { display: none; }
+.pk[hidden], .lc [hidden] { display: none !important; }
 .pkbox { background: var(--surface); width: 100%; max-width: 640px; max-height: 88vh; display: flex; flex-direction: column;
   border-radius: 14px 14px 0 0; padding: 12px 14px; box-shadow: 0 -4px 20px rgba(0,0,0,.25); }
 .pkhead { display: flex; align-items: center; gap: 8px; }
@@ -388,7 +425,63 @@ details summary { cursor: pointer; font-weight: 600; }
 
   <!-- ===================== MESURE ===================== -->
   <section class="tab" id="tab-mesure">
-    <div class="card">
+    <div class="modesw" role="tablist">
+      <button type="button" id="mmPoint" class="on">Point par point</button>
+      <button type="button" id="mmCodes">Levé par codes</button>
+    </div>
+
+    <!-- ===== Levé par codes (strings en direct) ===== -->
+    <div class="card lc" id="lcCard" hidden>
+      <div class="lcsketch">
+        <canvas id="lcCanvas"></canvas>
+        <div class="lcmap-btns">
+          <button type="button" id="lcFit" title="Voir tout le levé">Tout</button>
+          <button type="button" id="lcMe" title="Centrer sur ma position">Moi</button>
+          <button type="button" id="lcZin" title="Zoom avant">+</button>
+          <button type="button" id="lcZout" title="Zoom arrière">−</button>
+          <button type="button" id="lcLbl" title="Numéros des points">N°</button>
+        </div>
+        <div class="lcanom" id="lcAnom" hidden></div>
+      </div>
+      <div class="lctools" id="lcTools">
+        <button type="button" data-t="swap" title="Échanger les coordonnées de 2 points">INV PTS</button>
+        <button type="button" data-t="rev" title="Inverser le sens d'une ligne">INV LIGNE</button>
+        <button type="button" data-t="close" title="Fermer une figure : 1er et dernier point">FERMER</button>
+        <button type="button" data-t="link" title="Rattacher un point à une ligne">LIER</button>
+        <button type="button" data-t="cut" title="Retirer le segment entre 2 points">DÉLIER</button>
+        <button type="button" data-t="join" title="Faire une seule figure de 2 lignes">UNIR</button>
+        <button type="button" data-t="edit" title="Modifier la description d'un point">DESCR.</button>
+        <button type="button" data-t="del" title="Effacer / rétablir un point">EFFACER</button>
+        <button type="button" id="lcUndo" title="Annuler la dernière correction" disabled>ANNULER</button>
+      </div>
+      <div class="msg" id="lcToolMsg" hidden></div>
+
+      <div class="lcboxbar">
+        <label>Boîte de codes<select id="lcBox"></select></label>
+        <button type="button" class="btn" id="lcBoxEdit">Modifier</button>
+      </div>
+      <div class="lcbox" id="lcCodes"></div>
+      <div class="lcedit" id="lcEditBar" hidden>
+        <span class="hint">Touchez un code pour le remplacer ou le retirer.</span>
+        <button type="button" class="btn" id="lcAddCode">+ Code</button>
+        <button type="button" class="btn" id="lcNewBox">Nouvelle boîte</button>
+        <button type="button" class="btn" id="lcNatBox">Selon la nature</button>
+        <button type="button" class="btn" id="lcRenBox">Renommer</button>
+        <button type="button" class="btn danger" id="lcDelBox">Supprimer</button>
+        <button type="button" class="btn primary" id="lcEditDone">Terminé</button>
+      </div>
+
+      <div class="lcstr" id="lcStr" hidden>
+        <div class="lcstrhead"><b id="lcStrCode"></b><span class="hint" id="lcStrInfo"></span></div>
+        <div class="chips" id="lcLines"></div>
+        <div class="chips" id="lcCtl"></div>
+        <div class="chips" id="lcExtra"></div>
+      </div>
+      <div class="lcdesc"><span class="hint">Prochain point</span> <b id="lcName"></b> <code id="lcDesc">—</code></div>
+      <button class="btn primary big" id="lcMeasure" type="button" disabled>Mesurer</button>
+    </div>
+
+    <div class="card" id="ppCard">
       <h2>Point</h2>
       <p class="jobline" id="jobLine"></p>
       <div class="grid">
@@ -398,32 +491,32 @@ details summary { cursor: pointer; font-weight: 600; }
             <button class="btn" id="btnAutoName" title="Prochain numéro libre">Prochain</button>
           </div>
         </label>
-        <div class="full">
+        <div class="full pp-only">
           <label>Code (Pcode)<input id="codeQ" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Chercher : numéro, abréviation ou mot (526, GAR, garde)"></label>
           <div class="codelist" id="codeList"></div>
           <div class="codesel" id="codeSel"></div>
           <div class="chips" id="codeRecent"></div>
         </div>
-        <label>Ligne (string)
+        <label class="pp-only">Ligne (string)
           <div class="inline" style="margin-top:4px">
             <input id="mStr" inputmode="numeric" autocomplete="off" style="margin-top:0">
             <button class="btn" id="btnNewStr" title="Nouvelle ligne : numéro suivant et début de ligne (.1)">Nouvelle</button>
           </div>
         </label>
-        <label>Contrôle<select id="mCtl"></select></label>
+        <label class="pp-only">Contrôle<select id="mCtl"></select></label>
         <label class="full">Description du point (Pcode String.Contrôle)<input id="mCode" autocomplete="off" spellcheck="false"></label>
         <details class="full"><summary>Liaisons et calculs</summary>
           <div class="chips" id="cmdChips"></div>
           <p class="hint">Touchez une commande pour l’ajouter à la description (ex. 526 1_2P). À inscrire sur chacun des points concernés, dans l’ordre du levé.</p>
         </details>
-        <p class="hint full" id="codeHint" style="margin:0"></p>
+        <p class="hint full pp-only" id="codeHint" style="margin:0"></p>
         <label>Hauteur de canne (m)<input id="mPole" inputmode="decimal" value="2.000"></label>
         <label>Décalage vertical récepteur (m)<input id="mApc" inputmode="decimal" value="0.000"></label>
         <label class="full">Note<input id="mNote" autocomplete="off"></label>
       </div>
       <p class="hint">Décalage vertical : distance verticale entre le dessus de la canne (base du récepteur) et le point de référence de la position transmise. Emlid Reach RX : 0,145 m. Retenu pour chaque modèle de récepteur.</p>
     </div>
-    <div class="card">
+    <div class="card" id="critCard">
       <h2>Critères</h2>
       <div class="grid">
         <label>Durée (s)<input id="cDur" inputmode="numeric" value="5"></label>
@@ -650,5 +743,7 @@ details summary { cursor: pointer; font-weight: 600; }
 <script src="js/cogo.js"></script>
 <script src="js/app.js"></script>
 <script src="js/cogo-ui.js"></script>
+<script src="js/moteur-leve.js"></script>
+<script src="js/leve-codes.js"></script>
 </body>
 </html>
