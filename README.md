@@ -169,7 +169,18 @@ Un travail contient **ses** points (mesurés, calculés). Les autres travaux de 
 - **Nom d'un point lié** : `point@source` (ex. `631313015@261109A0051EXC63`, `P2@implantation`). Le nom seul suffit s'il est unique parmi les références utilisables ; sinon l'application demande de préciser. Aucun conflit avec les numéros du jour.
 - **Contrôle** (onglet Mesure) : choisir le point de contrôle, mesurer. Le contrôle (source, point, description, coordonnées, mesure, ΔE ΔN ΔH ΔZ) est enregistré au travail ; rien n'entre au levé, sauf si « Garder aussi la mesure comme point du levé » est coché. Onglet Points → « Exporter les contrôles » : `<travail>_CONTROLES.csv`.
 - **Exception** : « Copier dans le levé » dans la fenêtre de choix (ou 1 · Enregistre → Destination « Copier ») copie un point avec sa trace d'origine.
+- **Aperçu avant de lier** : choisir un ou plusieurs fichiers ; pour chacun, l'application montre nom complet, taille, date, premières lignes, points lus, ordre des colonnes détecté (le Nord MTM ≈ 5 000 000 dépasse l'Est), étendue, codes et distance au travail ou à ta position (avertit au-delà de 5 km). Puis Lier, Copier (1 · Enregistre) ou Ignorer.
+- Le sélecteur d'Android rouvre le dernier dossier utilisé (clé USB, Téléchargements). Astuce : l'icône « liste » en haut à droite du sélecteur affiche les noms complets et les dates.
 - Les fichiers liés restent sur l'appareil ; « Retirer » les efface de l'appareil.
+
+## Implantation (première version : point ou ligne)
+
+Onglet **Mesure → Implantation**.
+
+- **Point** : choisir le point (du travail ou d'une référence liée, ex. `P1@implantation`) ; il n'est pas copié dans le levé.
+- **Ligne** : choisir A et B. Sans chaînage, l'écran donne le chaînage et le déport (+ droite / − gauche) de ta position et le ΔZ par rapport à la ligne ; avec un chaînage (et un déport), il guide vers ce point ; « − pas / + pas » avance de station en station.
+- **Guidage** : distance, Nord / Est, Avancer / Droite (après quelques pas, selon le sens de la marche), Déblai (couper) / Remblai (remplir) ; cible au centre, l'échelle suit la distance ; « SUR LA CIBLE » sous la tolérance (0,020 m par défaut). Écarts en grille (plan MTM).
+- **Mesurer le point implanté** : mesure normale (moyenne, critères) ; numéro d'implantation du jour (NDA-001 : 200 à 400) ; écarts à la cible notés au point et au travail ; onglet Points → « Exporter l'implantation » : `<travail>_IMPLANTATION.csv`.
 
 ## Corrections par radio (LoRa, UHF) ou modem du récepteur
 

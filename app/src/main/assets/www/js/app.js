@@ -381,6 +381,9 @@
       if (!cr.keep) { state.pending = null; state.recorder = null; $('result').style.display = 'none'; $('prog').style.width = '0%'; renderJobBar(); return; }
       ctlNote = cr.note;
     }
+    // Point implanté : écarts à la cible enregistrés au travail et notés au point.
+    var stake = window.Stake && Stake.active() ? Stake.record(r, $('mLeve').value.trim(), $('mNom').value.trim()) : null;
+    if (stake) ctlNote = (ctlNote + ' ' + stake.note).trim();
     var p = {
       leve: $('mLeve').value.trim(), nom: $('mNom').value.trim(), code: $('mCode').value.trim(), note: ($('mNote').value.trim() + (ctlNote ? ' ' + ctlNote : '')).trim(),
       codeDesc: codeDescription($('mCode').value), type: 'mesure',
@@ -390,6 +393,7 @@
       qualityLabel: (Nmea.FIX_LABELS[r.quality] || r.quality) + (r.ok ? '' : ' (hors critères)'),
       pole: r.pole, apc: r.apc, recepteur: state.driver ? state.driver.label : '', start: r.start, end: r.end
     };
+    if (stake) { p.implante = stake.cible; p.type = 'mesure'; }
     points.push(p); save(STORE_POINTS, points);
     rememberCode(Codes.parseDesc(p.code).base);
     if (!(window.LeveCodes && LeveCodes.active())) afterPointCode();
@@ -1016,8 +1020,21 @@
     /* Position actuelle du récepteur dans le système du travail (pour trier les points par proximité), ou null. */
     here: function () {
       var g = state.gga; if (!g || g.lat === null || Date.now() - state.lastGgaAt > 5000) return null;
-      var c = Proj.convert(g.lat, g.lon, g.hEll, job()); return c && c.e !== null ? { e: c.e, n: c.n } : null;
-    }
+      var c = Proj.convert(g.lat, g.lon, g.hEll === null ? null : g.hEll - numVal('mPole', 0) - numVal('mApc', 0), job());
+      if (!c || c.e === null) return null;
+      var gs = state.gst && Date.now() - state.lastGgaAt < 5000 ? state.gst : null;
+      return { e: c.e, n: c.n, z: c.z, q: g.quality, qLabel: Nmea.FIX_LABELS[g.quality] || '',
+        sh: gs && gs.sigmaLat !== null && gs.sigmaLon !== null ? Math.hypot(gs.sigmaLat, gs.sigmaLon) : null, sv: gs ? gs.sigmaAlt : null };
+    },
+    /* Prochain numéro d'implantation du jour (NDA-001, 10.3 : 200 à 400), ou null sans code d'arpenteur. */
+    stakeName: function () {
+      var ss = ssValue(); if ($('jNum').value !== 'an' || !ss) return null;
+      var yr0 = new Date().getFullYear() % 10 === 0;
+      if (yr0 && !/^\d$/.test($('jA').value)) return null;
+      var prefix = Codes.pointPrefix(new Date(), ss, yr0 ? $('jA').value : null);
+      return Codes.nextPointNumber(prefix, points.map(function (p) { return p.nom; }), Codes.pointRange('2'));
+    },
+    setPointName: function (n) { $('mNom').value = n; persistFields(); }
   };
 
   $('modeInfo').textContent = Native ? 'Application Android — version ' + Native.appVersion() : 'Mode navigateur : simulation seulement (le Bluetooth exige l’application Android).';

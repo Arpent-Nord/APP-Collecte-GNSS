@@ -531,4 +531,19 @@ test('poursuite : ligne la plus près dans le prolongement, ambiguïté, courbe,
   assert.strictEqual(P.describe({ d: 3.24, lat: 0.2, along: 3, mode: 'ligne' }), '3,2 m · dans l’axe');
 });
 
+test('implantation : écarts à la cible, avancer / droite, ligne (chaînage, déport + droite), déblai / remblai', () => {
+  const I = require(path.join(www, 'implantation.js'));
+  const r = I.toTarget({ e: 0, n: 0, z: 10.2 }, { e: 3, n: 4, z: 10 }, 0);          // marche vers le nord
+  near(r.d, 5, 1e-12); near(r.fwd, 4, 1e-12); near(r.right, 3, 1e-12); near(r.dZ, 0.2, 1e-12);   // déblai 0,2
+  const w = I.toTarget({ e: 0, n: 0 }, { e: 3, n: 4 }, Math.PI / 2);                 // marche vers l'est
+  near(w.fwd, 3, 1e-12); near(w.right, -4, 1e-12);                                  // la cible est à gauche
+  const A = { e: 100, n: 100, z: 10 }, B = { e: 100, n: 200, z: 20 };                // ligne vers le nord
+  const o = I.onLine(A, B, { e: 101.5, n: 130 });
+  near(o.ch, 30, 1e-12); near(o.off, 1.5, 1e-12); near(o.z, 13, 1e-12);            // à l'est d'une ligne vers le nord = droite
+  const q = I.linePoint(A, B, 25, -2);
+  near(q.e, 98, 1e-12); near(q.n, 125, 1e-12); near(q.z, 12.5, 1e-12);
+  assert.strictEqual(I.headingFrom([{ e: 0, n: 0 }, { e: 0.1, n: 0.1 }]), null);
+  near(I.headingFrom([{ e: 0, n: 0 }, { e: 1, n: 0 }]), Math.PI / 2, 1e-12);
+});
+
 console.log(`\n${passed} tests réussis`);

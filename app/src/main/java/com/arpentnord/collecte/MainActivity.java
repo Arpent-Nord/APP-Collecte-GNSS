@@ -56,6 +56,10 @@ public class MainActivity extends Activity {
                 Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 i.addCategory(Intent.CATEGORY_OPENABLE);
                 i.setType("*/*");
+                if (params != null && params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                // rouvrir le dernier dossier utilisé (clé USB, Téléchargements…)
+                String last = getSharedPreferences("collecte", MODE_PRIVATE).getString("lastOpenUri", null);
+                if (last != null) i.putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, Uri.parse(last));
                 try {
                     startActivityForResult(i, REQ_OPEN);
                 } catch (Exception e) {
@@ -157,7 +161,17 @@ public class MainActivity extends Activity {
         if (requestCode == REQ_OPEN) {
             ValueCallback<Uri[]> cb = fileCallback;
             fileCallback = null;
-            if (cb != null) cb.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
+            Uri[] res = null;
+            if (resultCode == RESULT_OK && data != null) {
+                if (data.getClipData() != null) {
+                    int n = data.getClipData().getItemCount();
+                    res = new Uri[n];
+                    for (int k = 0; k < n; k++) res[k] = data.getClipData().getItemAt(k).getUri();
+                } else if (data.getData() != null) res = new Uri[]{ data.getData() };
+                if (res != null && res.length > 0)
+                    getSharedPreferences("collecte", MODE_PRIVATE).edit().putString("lastOpenUri", res[0].toString()).apply();
+            }
+            if (cb != null) cb.onReceiveValue(res);
             return;
         }
         if (requestCode != REQ_SAVE) return;

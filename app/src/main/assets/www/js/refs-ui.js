@@ -49,21 +49,112 @@
     if (!id) { msg('rfMsg', 'Choisir un travail ou un fichier dans la liste.', 'warn'); return; }
     R.ensure(id); msg('rfMsg', R.source(id).label + ' lié : ses points sont utilisables sans entrer dans le levé.', 'ok');
   });
-  if (S.rfOrder) $('rfOrder').value = S.rfOrder;
-  $('rfOrder').addEventListener('change', function () { S.rfOrder = this.value; Ctx.save(); });
   $('rfFile').addEventListener('change', function () {
-    var file = this.files && this.files[0]; this.value = ''; if (!file) return;
-    var fr = new FileReader();
-    fr.onload = function () {
-      try {
+    var files = [].slice.call(this.files || []); this.value = ''; if (!files.length) return;
+    previewFiles(files, {
+      link: function (name, list) {
         if (!Ctx.leve()) throw new Error('aucun travail ouvert');
-        var list = window.CogoUi.parsePointFile(fr.result, $('rfOrder').value); if (!list.length) throw new Error('aucun point lisible');
-        var id = R.addFile(file.name, list); R.ensure(id);
-        msg('rfMsg', list.length + ' point(s) de ' + file.name + ' liés : « point@' + R.source(id).alias + ' ».', 'ok');
-      } catch (e) { msg('rfMsg', 'Fichier refusé : ' + e.message + '.', 'bad'); }
-    };
-    fr.readAsText(file);
+        var id = R.addFile(name, list); R.ensure(id);
+        msg('rfMsg', list.length + ' point(s) de ' + name + ' liés : « point@' + R.source(id).alias + ' ».', 'ok');
+      },
+      error: function (e) { msg('rfMsg', 'Fichier refusé : ' + e.message + '.', 'bad'); }
+    });
   });
+
+  // ---------- Aperçu d'un fichier avant de le lier ou de le copier ----------
+  /* Le sélecteur d'Android coupe les noms : avant toute action, on montre le fichier (taille, date, premières lignes),
+   * ce qu'on en lit (points, ordre des colonnes détecté, étendue, codes) et sa distance au travail ou à la position. */
+  var FP = (function () {
+    var d = document.createElement('div'); d.className = 'pk fpv'; d.id = 'fpv'; d.hidden = true;
+    d.innerHTML = '<div class="pkbox" role="dialog" aria-modal="true">' +
+      '<div class="pkhead"><b id="fpName"></b><button class="pkx" id="fpClose" type="button" aria-label="Fermer">×</button></div>' +
+      '<div class="meta" id="fpMeta"></div>' +
+      '<label>Ordre des colonnes<select id="fpOrder"></select></label>' +
+      '<div class="meta" id="fpStats"></div><div class="near meta" id="fpNear"></div>' +
+      '<div class="scroll"><table id="fpTable"></table><div class="meta" style="margin-top:6px">Début du fichier :</div><pre id="fpRaw"></pre></div>' +
+      '<div class="pkfoot"><div class="pkseq" id="fpQueue"></div>' +
+      '<button class="btn" id="fpSkip" type="button">Ignorer ce fichier</button>' +
+      '<button class="btn" id="fpCopy" type="button">Copier dans le levé</button>' +
+      '<button class="btn primary" id="fpLink" type="button">Lier au travail</button></div></div>';
+    document.body.appendChild(d);
+    return d;
+  })();
+  /* Ordre probable d'un fichier sans en-tête : au Québec (MTM), le Nord (≈ 5 000 000) dépasse l'Est (≈ 300 000). */
+  function detectOrder(text) {
+    var a = window.CogoUi.parsePointFile(text, 'PNEZD');
+    if (!a.length) return 'PNEZD';
+    var sorted = function (v) { v = v.slice().sort(function (x, y) { return x - y; }); return v[v.length >> 1]; };
+    return sorted(a.map(function (r) { return r.n; })) >= sorted(a.map(function (r) { return r.e; })) ? 'PNEZD' : 'PENZD';
+  }
+  function hasHeader(text) { var l = String(text).replace(/^﻿/, '').split(/\r?\n/)[0] || ''; return /(^|[,;\t])\s*(name|point|easting|northing|est|nord|x|y)\s*([,;\t]|$)/i.test(l); }
+  function previewFiles(files, opt) {
+    var queue = files.slice();
+    function next() {
+      var file = queue.shift(); if (!file) { FP.hidden = true; return; }
+      var fr = new FileReader();
+      fr.onload = function () { show(file, String(fr.result || '')); };
+      fr.onerror = function () { opt.error && opt.error(new Error('lecture impossible')); next(); };
+      fr.readAsText(file);
+    }
+    function show(file, text) {
+      var head = hasHeader(text), auto = head ? null : detectOrder(text), list = [];
+      var lines = text.replace(/^﻿/, '').split(/\r?\n/).filter(function (l) { return l.trim(); });
+      $('fpName').textContent = file.name;
+      $('fpMeta').textContent = (file.size < 1024 ? file.size + ' o' : (file.size / 1024).toFixed(1) + ' ko') + ' · ' +
+        (file.lastModified ? new Date(file.lastModified).toLocaleString('fr-CA', { dateStyle: 'medium', timeStyle: 'short' }) : 'date inconnue') + ' · ' + lines.length + ' ligne(s)' +
+        (head ? ' · en-tête reconnu' : '');
+      var sel = $('fpOrder'); sel.innerHTML = '';
+      (head ? [['HEAD', 'Selon l’en-tête du fichier']] : [['PNEZD', 'P, N, E, Z, D' + (auto === 'PNEZD' ? ' (détecté)' : '')], ['PENZD', 'P, E, N, Z, D' + (auto === 'PENZD' ? ' (détecté)' : '')]])
+        .forEach(function (o) { var x = document.createElement('option'); x.value = o[0]; x.textContent = o[1]; sel.appendChild(x); });
+      sel.value = head ? 'HEAD' : auto; sel.disabled = head;
+      $('fpRaw').textContent = lines.slice(0, 6).join('\n') + (lines.length > 6 ? '\n…' : '');
+      function parse() {
+        try { list = window.CogoUi.parsePointFile(text, head ? 'PNEZD' : sel.value); } catch (e) { list = []; $('fpStats').textContent = 'Illisible : ' + e.message + '.'; }
+        render();
+      }
+      function render() {
+        var n = list.length, skip = lines.length - n - (head ? 1 : 0);
+        $('fpLink').disabled = $('fpCopy').disabled = !n;
+        if (!n) { $('fpStats').textContent = 'Aucun point lisible : ce n’est pas un fichier de points P,N,E,Z,D ou CSV avec en-tête.'; $('fpTable').innerHTML = ''; $('fpNear').textContent = ''; return; }
+        var e0 = Infinity, e1 = -Infinity, n0 = Infinity, n1 = -Infinity, se = 0, sn = 0, codes = {}, zs = 0;
+        list.forEach(function (r) {
+          e0 = Math.min(e0, r.e); e1 = Math.max(e1, r.e); n0 = Math.min(n0, r.n); n1 = Math.max(n1, r.n); se += r.e; sn += r.n;
+          if (r.z !== null) zs++;
+          var c = String(r.d || '').trim().split(/\s+/)[0]; if (c) codes[c] = (codes[c] || 0) + 1;
+        });
+        var top = Object.keys(codes).sort(function (a, b) { return codes[b] - codes[a]; }).slice(0, 6);
+        $('fpStats').textContent = n + ' point(s)' + (skip > 0 ? ' · ' + skip + ' ligne(s) ignorée(s)' : '') + ' · étendue ' + (e1 - e0).toFixed(1) + ' × ' + (n1 - n0).toFixed(1) + ' m' +
+          ' · ' + (zs === n ? 'avec altitudes' : zs ? zs + ' avec altitude' : 'sans altitude') + (top.length ? ' · codes : ' + top.map(function (c) { return c + ' (' + codes[c] + ')'; }).join(', ') : '');
+        // distance au travail (points du jour) ou à la position : est-ce le bon site, le bon système ?
+        var cx = se / n, cy = sn / n, here = Ctx.here(), jp = Ctx.jobPoints().filter(function (p) { return p.est !== null && p.est !== undefined; }), ref = null, what = '';
+        if (here) { ref = [here.e, here.n]; what = 'de ta position'; }
+        else if (jp.length) { ref = [jp.reduce(function (s, p) { return s + p.est; }, 0) / jp.length, jp.reduce(function (s, p) { return s + p.nord; }, 0) / jp.length]; what = 'des points du travail'; }
+        var nr = $('fpNear');
+        if (ref) {
+          var d = Math.hypot(cx - ref[0], cy - ref[1]), far = d > 5000;
+          nr.className = 'near meta ' + (far ? 'warn' : 'ok');
+          nr.textContent = 'Centre du fichier à ' + (d < 1000 ? d.toFixed(0) + ' m' : (d / 1000).toFixed(1) + ' km') + ' ' + what + (far ? ' : autre site, ou autre système / ordre des colonnes ?' : '.');
+        } else { nr.className = 'near meta'; nr.textContent = 'Position et points du travail inconnus : distance au site non vérifiée.'; }
+        var f = function (v) { return v === null || v === undefined ? '—' : v.toFixed(3); };
+        $('fpTable').innerHTML = '<tr><th>Point</th><th>Est</th><th>Nord</th><th>Z</th><th>Description</th></tr>' + list.slice(0, 8).map(function (r) {
+          return '<tr><td>' + esc(r.name) + '</td><td>' + f(r.e) + '</td><td>' + f(r.n) + '</td><td>' + f(r.z) + '</td><td>' + esc(r.d || '') + '</td></tr>';
+        }).join('') + (n > 8 ? '<tr><td colspan="5">… ' + (n - 8) + ' autre(s)</td></tr>' : '');
+      }
+      sel.onchange = parse;
+      $('fpQueue').textContent = queue.length ? queue.length + ' autre(s) fichier(s) ensuite' : '';
+      $('fpCopy').style.display = opt.copy ? '' : 'none';
+      $('fpLink').className = 'btn' + (opt.main === 'copier' ? '' : ' primary');
+      $('fpCopy').className = 'btn' + (opt.main === 'copier' ? ' primary' : '');
+      function act(fn) { return function () { try { fn(file.name, list); } catch (e) { opt.error && opt.error(e); } next(); }; }
+      $('fpLink').onclick = act(opt.link);
+      $('fpCopy').onclick = opt.copy ? act(opt.copy) : null;
+      $('fpSkip').onclick = next;
+      $('fpClose').onclick = function () { queue = []; FP.hidden = true; };
+      FP.hidden = false; parse();
+    }
+    next();
+  }
+  window.RefsUi = { previewFiles: previewFiles, detectOrder: detectOrder };
 
   // ---------- Onglet Mesure : contrôle ----------
   function asTarget(name) {

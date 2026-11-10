@@ -234,35 +234,36 @@
     });
     return out;
   }
+  /* Lier un fichier lu (liste de parsePointFile) au travail : ses points restent hors du levé. */
+  function linkList(name, list) {
+    if (!list.length) throw new Error('aucun point lisible');
+    if (!Ctx.leve()) throw new Error('aucun travail ouvert');
+    var id = Refs.addFile(name, list); Refs.ensure(id);
+    return id;
+  }
+  /* Exception : copier les points d'un fichier dans le levé (trace d'origine). */
+  function copyList(name, list) {
+    var jw = Ctx.writable(); if (!jw.ok) throw new Error(jw.why.replace(/\.$/, ''));
+    var add = [], skipped = 0, replaced = 0, dup = $('c1Dup').value, src = 'Importé de ' + name;
+    list.forEach(function (r) {
+      var ex = findOwn(r.name), p = makePoint(r.name, r.d, r, 'importe', src);
+      p.origLeve = name; p.origNom = r.name;
+      if (ex && dup === 'skip') { skipped++; return; }
+      if (ex && dup === 'replace') { Ctx.replacePoint(ex.idx, p); replaced++; return; }
+      add.push(p);
+    });
+    if (add.length) Ctx.addPoints(add);
+    return list.length + ' point(s) lu(s) : ' + add.length + ' ajouté(s) au levé' + (replaced ? ', ' + replaced + ' remplacé(s)' : '') + (skipped ? ', ' + skipped + ' ignoré(s) (déjà présents)' : '') + '.';
+  }
   $('c1File').addEventListener('change', function () {
-    var file = this.files && this.files[0]; this.value = '';
-    if (!file) return;
-    var fr = new FileReader();
-    fr.onload = function () {
-      try {
-        var list = parsePointFile(fr.result, $('c1Order').value), add = [], skipped = 0, replaced = 0;
-        if ($('c1Dest').value === 'lier') {
-          if (!list.length) throw new Error('aucun point lisible');
-          if (!Ctx.leve()) throw new Error('aucun travail ouvert');
-          var id = Refs.addFile(file.name, list); Refs.ensure(id);
-          msg('c1Msg', list.length + ' point(s) de ' + file.name + ' liés au travail, sans entrer dans le levé : « point@' + Refs.source(id).alias + ' ».', 'ok');
-          return;
-        }
-        var jw = Ctx.writable(); if (!jw.ok) throw new Error(jw.why.replace(/\.$/, ''));
-        var dup = $('c1Dup').value, src = 'Importé de ' + file.name;
-        list.forEach(function (r) {
-          var ex = findOwn(r.name), p = makePoint(r.name, r.d, r, 'importe', src);
-          p.origLeve = file.name; p.origNom = r.name;
-          if (ex && dup === 'skip') { skipped++; return; }
-          if (ex && dup === 'replace') { Ctx.replacePoint(ex.idx, p); replaced++; return; }
-          add.push(p);
-        });
-        if (add.length) Ctx.addPoints(add);
-        msg('c1Msg', list.length + ' point(s) lu(s) : ' + add.length + ' ajouté(s)' + (replaced ? ', ' + replaced + ' remplacé(s)' : '') +
-          (skipped ? ', ' + skipped + ' ignoré(s) (déjà présents)' : '') + '.', list.length ? 'ok' : 'warn');
-      } catch (e) { msg('c1Msg', 'Fichier refusé : ' + e.message + '.', 'bad'); }
-    };
-    fr.readAsText(file);
+    var files = [].slice.call(this.files || []); this.value = '';
+    if (!files.length) return;
+    window.RefsUi.previewFiles(files, {
+      main: $('c1Dest').value,
+      link: function (name, list) { var id = linkList(name, list); msg('c1Msg', list.length + ' point(s) de ' + name + ' liés au travail, sans entrer dans le levé : « point@' + Refs.source(id).alias + ' ».', 'ok'); },
+      copy: function (name, list) { msg('c1Msg', copyList(name, list), 'ok'); },
+      error: function (e) { msg('c1Msg', 'Fichier refusé : ' + e.message + '.', 'bad'); }
+    });
   });
 
   // ---------- 2 Liste ----------
@@ -519,7 +520,7 @@
       '<div class="pkopts"><label>Travail<select id="pkLeve"></select></label>' +
       '<label>Ordre<select id="pkSort"><option value="recent">Plus récents</option><option value="near">Plus proches de moi</option><option value="name">Par nom</option></select></label></div>' +
       '<div class="pktools"><button class="btn" id="pkAddPt" type="button">+ Inscrire un point connu</button>' +
-      '<label class="btn" for="pkFile" style="display:inline-block;color:var(--ink)">+ Lier un fichier</label><input type="file" id="pkFile" accept=".txt,.csv,text/plain,text/csv" style="display:none">' +
+      '<label class="btn" for="pkFile" style="display:inline-block;color:var(--ink)">+ Lier un fichier</label><input type="file" id="pkFile" multiple style="display:none">' +
       '<label class="check" style="margin:0"><input type="checkbox" id="pkCopy">Copier dans le levé (exception)</label></div>' +
       '<div class="pklist" id="pkList"></div>' +
       '<div class="pkfoot"><div class="pkseq" id="pkSeq"></div>' +
@@ -670,18 +671,15 @@
     if (hit && hit.p) pickPoint({ p: hit.p, key: q, own: false });
   });
   $('pkFile').addEventListener('change', function () {
-    var file = this.files && this.files[0]; this.value = ''; if (!file) return;
-    var fr = new FileReader();
-    fr.onload = function () {
-      try {
-        if (!Ctx.leve()) throw new Error('aucun travail ouvert');
-        var list = parsePointFile(fr.result, S.rfOrder || 'PNEZD'); if (!list.length) throw new Error('aucun point lisible');
-        var id = Refs.addFile(file.name, list); Refs.ensure(id);
+    var files = [].slice.call(this.files || []); this.value = ''; if (!files.length) return;
+    window.RefsUi.previewFiles(files, {
+      link: function (name, list) {
+        var id = linkList(name, list);
         var sel = $('pkLeve'), o = document.createElement('option'); o.value = 'src:' + id; o.textContent = '↳ ' + Refs.source(id).label + ' (liée)'; sel.appendChild(o); sel.value = o.value;
-        renderPicker(); $('pkSeq').textContent = list.length + ' point(s) liés de ' + file.name + '.';
-      } catch (e) { $('pkSeq').textContent = 'Fichier refusé : ' + e.message + '.'; }
-    };
-    fr.readAsText(file);
+        renderPicker(); $('pkSeq').textContent = list.length + ' point(s) liés de ' + name + '.';
+      },
+      error: function (e) { $('pkSeq').textContent = 'Fichier refusé : ' + e.message + '.'; }
+    });
   });
   $('pkClose').addEventListener('click', closePicker);
   $('pkOk').addEventListener('click', function () { finish(PK.chosen.join(', ')); });
