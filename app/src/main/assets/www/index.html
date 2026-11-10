@@ -111,6 +111,17 @@ body.codes-mode .pp-only { display: none !important; }
 body.codes-mode #critCard { display: none; }
 body.codes-mode #btnMeasure { display: none; }
 .pkbtn { white-space: nowrap; }
+.ctl { border-left: 5px solid var(--primary); }
+.ctl.on { background: var(--primary-soft); }
+.ctlhead b { font-size: 16px; margin-right: 6px; }
+.rfrow { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.rfrow .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.rfrow .nm small { display: block; color: var(--muted); }
+.rfst { min-width: 92px; }
+.rfst.s0 { opacity: .6; }
+.rfst.s2 { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); }
+.pkrow .src { font-size: 11px; color: var(--primary); font-weight: 700; margin-left: 6px; }
+.pktools { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0; }
 .pk { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.35); display: flex; align-items: flex-end; justify-content: center; }
 .pk[hidden], .lc [hidden] { display: none !important; }
 .pkbox { background: var(--surface); width: 100%; max-width: 640px; max-height: 88vh; display: flex; flex-direction: column;
@@ -297,6 +308,23 @@ details summary { cursor: pointer; font-weight: 600; }
       <p class="hint" id="jNumHint"></p>
     </div>
 
+    <div class="card" id="rfCard">
+      <h2>Références liées</h2>
+      <p class="hint" style="margin-top:0">Travaux et fichiers de points consultés sans être ajoutés au levé : contrôle, calculs, implantation.
+        Toucher l’état pour passer de <b>Caché</b> à <b>Visible</b> (croquis) puis <b>Utilisable</b> (choix des points).</p>
+      <div id="rfList"></div>
+      <div class="row">
+        <select id="rfJob" style="flex:1;min-width:0"></select>
+        <button class="btn" id="rfAddJob" type="button">Lier</button>
+      </div>
+      <div class="row">
+        <label class="btn" for="rfFile" style="display:inline-block;color:var(--ink)">Lier un fichier .txt / .csv</label>
+        <input type="file" id="rfFile" accept=".txt,.csv,text/plain,text/csv" style="display:none">
+        <select id="rfOrder" title="Ordre des colonnes sans en-tête"><option value="PNEZD">P, N, E, Z, D</option><option value="PENZD">P, E, N, Z, D</option></select>
+      </div>
+      <div class="msg" id="rfMsg" style="display:none"></div>
+    </div>
+
     <div class="card">
       <h2>Fichier de référence</h2>
       <p class="hint" style="margin-top:0">reference.json (Administration de la boîte à outils, dossier 01_TRAITEMENT/_SYSTEME) : codes d’arpenteurs et table des natures à jour.
@@ -429,6 +457,16 @@ details summary { cursor: pointer; font-weight: 600; }
 
   <!-- ===================== MESURE ===================== -->
   <section class="tab" id="tab-mesure">
+    <div class="card ctl" id="ctlCard">
+      <div class="ctlhead"><b>Contrôle</b> <span class="hint">sur un point d’un travail ou d’un fichier lié, sans l’ajouter au levé</span></div>
+      <div class="inline" style="margin-top:6px">
+        <input id="ctlRef" placeholder="Point de contrôle (vide = mesure normale)" autocomplete="off" style="margin-top:0">
+        <button type="button" class="btn" id="ctlPick">Points</button>
+        <button type="button" class="btn" id="ctlClear" title="Annuler le contrôle">×</button>
+      </div>
+      <label class="check" style="margin-top:6px"><input type="checkbox" id="ctlKeep">Garder aussi la mesure comme point du levé</label>
+      <div class="msg" id="ctlMsg" style="display:none"></div>
+    </div>
     <div class="modesw" role="tablist">
       <button type="button" id="mmPoint" class="on">Point par point</button>
       <button type="button" id="mmCodes">Levé par codes</button>
@@ -602,7 +640,10 @@ details summary { cursor: pointer; font-weight: 600; }
         <label>Ordre des colonnes (fichier sans en-tête)
           <select id="c1Order"><option value="PNEZD">P, N, E, Z, D</option><option value="PENZD">P, E, N, Z, D</option></select>
         </label>
-        <label>Point déjà présent
+        <label>Destination
+          <select id="c1Dest"><option value="lier">Lier au travail (référence, recommandé)</option><option value="copier">Copier dans le levé (exception)</option></select>
+        </label>
+        <label>Point déjà présent (copie)
           <select id="c1Dup"><option value="skip">Ignorer</option><option value="replace">Remplacer</option></select>
         </label>
       </div>
@@ -610,7 +651,8 @@ details summary { cursor: pointer; font-weight: 600; }
         <label class="btn" for="c1File" style="display:inline-block;color:var(--ink)">Choisir un fichier (CSV, TXT)</label>
         <input type="file" id="c1File" style="display:none">
       </div>
-      <p class="hint">Reconnaît l’export « CSV » d’Emlid Flow 360 (Name, Easting, Northing, Elevation, Description) et les fichiers P,N,E,Z,D. Les coordonnées doivent être dans le système du travail.</p>
+      <p class="hint">Reconnaît l’export « CSV » d’Emlid Flow 360 (Name, Easting, Northing, Elevation, Description) et les fichiers P,N,E,Z,D. Les coordonnées doivent être dans le système du travail.
+        <b>Lier</b> : les points restent à part (Travail → Références liées), utilisables sous le nom « point@fichier » sans entrer dans le levé.</p>
       <div class="msg" id="c1Msg"></div>
     </div>
 
@@ -726,6 +768,7 @@ details summary { cursor: pointer; font-weight: 600; }
       <p class="hint" id="ptEmpty">Aucun point pour l'instant.</p>
       <div class="row">
         <button class="btn primary" id="btnExport">Exporter en CSV</button>
+        <button class="btn" id="btnExportCtl" style="display:none">Exporter les contrôles</button>
         <button class="btn danger" id="btnClear">Tout effacer</button>
       </div>
       <div class="msg" id="ptMsg" style="display:none"></div>
@@ -747,9 +790,11 @@ details summary { cursor: pointer; font-weight: 600; }
 <script src="grids/na83scrs.js"></script>
 <script src="js/cogo.js"></script>
 <script src="js/app.js"></script>
+<script src="js/refs.js"></script>
 <script src="js/cogo-ui.js"></script>
 <script src="js/moteur-leve.js"></script>
 <script src="js/poursuite.js"></script>
 <script src="js/leve-codes.js"></script>
+<script src="js/refs-ui.js"></script>
 </body>
 </html>

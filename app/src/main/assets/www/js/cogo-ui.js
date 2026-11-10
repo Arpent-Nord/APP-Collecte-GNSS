@@ -24,8 +24,8 @@
   function msg(id, text, cls) { var m = $(id); m.style.display = text ? '' : 'none'; m.className = 'msg' + (cls ? ' ' + cls : ''); m.textContent = text || ''; }
 
   // ---------- Base de points ----------
-  /* Dernier point portant ce nom, avec coordonnées planes. */
-  function findPoint(name) {
+  /* Point du travail en cours (dernier portant ce nom, avec coordonnées planes). */
+  function findOwn(name) {
     name = String(name || '').trim(); if (!name) return null;
     var pts = Ctx.points(), job = Ctx.leve();
     for (var i = pts.length - 1; i >= 0; i--) {
@@ -34,10 +34,23 @@
     }
     return null;
   }
+  /* Point du travail, sinon d'une référence liée (« nom@source », ou nom seul s'il est unique parmi les références utilisables). */
+  var ambig = {};
+  function findPoint(name) {
+    var own = String(name || '').indexOf('@') < 0 ? findOwn(name) : null;
+    if (own || !window.Refs) return own;
+    var r = Refs.find(name);
+    if (!r) return null;
+    if (!r.p) { ambig[name] = r.ambiguous; return null; }
+    return { name: r.p.q, e: r.p.est, n: r.p.nord, z: r.p.alt, src: r.p, idx: -1, linked: true };
+  }
   function need(names) {
     var out = [], missing = [];
+    ambig = {};
     names.forEach(function (n) { var p = findPoint(n); if (p) out.push(p); else missing.push(n || '(vide)'); });
-    if (missing.length) throw new Error('Point introuvable dans le travail ' + (Ctx.leve() || '(sans nom)') + ' : ' + missing.join(', ') + ' (bouton Points pour le choisir ou l\u2019importer d\u2019un autre travail)');
+    var am = missing.filter(function (n) { return ambig[n]; });
+    if (am.length) throw new Error('Point ' + am[0] + ' présent dans plusieurs références liées (' + ambig[am[0]].join(', ') + ') : préciser la source');
+    if (missing.length) throw new Error('Point introuvable dans le travail ' + (Ctx.leve() || '(sans nom)') + ' ni dans ses références liées : ' + missing.join(', ') + ' (bouton Points pour le choisir ou lier un travail ou un fichier)');
     var sys = currentSystem(), other = out.filter(function (p) { return p.src.systeme && p.src.systeme !== sys; });
     if (other.length) throw new Error('Point ' + other[0].name + ' dans un autre système (' + other[0].src.systeme + ') que le travail (' + sys + ')');
     return out;
@@ -131,7 +144,7 @@
     var name = $(nameId).value.trim(), jw = Ctx.writable();
     if (!jw.ok) { msg(msgId, jw.why, 'warn'); return false; }
     if (!name) { msg(msgId, 'Indiquer le nom du nouveau point.', 'warn'); return false; }
-    if (findPoint(name)) { suggested[nameId] = Ctx.nextName(); msg(msgId, 'Le point ' + name + ' existe déjà dans ce travail. Prochain libre proposé : ' + suggested[nameId] + '.', 'warn'); $(nameId).value = suggested[nameId]; return false; }
+    if (findOwn(name)) { suggested[nameId] = Ctx.nextName(); msg(msgId, 'Le point ' + name + ' existe déjà dans ce travail. Prochain libre proposé : ' + suggested[nameId] + '.', 'warn'); $(nameId).value = suggested[nameId]; return false; }
     Ctx.addPoints([makePoint(name, $(codeId).value.trim() || computedCode(), c, 'calcule', formule)]);
     msg(msgId, 'Point ' + name + ' enregistré (' + formule + ').', 'ok');
     suggested[nameId] = Ctx.nextName(); $(nameId).value = suggested[nameId];
@@ -165,7 +178,7 @@
     var nameId = { 1: 'c1Nom', 3: 'c3Nom' }[c.n];
     if (nameId) {
       var v = $(nameId).value.trim();
-      if (!v || findPoint(v) || v === suggested[nameId]) { suggested[nameId] = Ctx.nextName(); $(nameId).value = suggested[nameId]; }
+      if (!v || findOwn(v) || v === suggested[nameId]) { suggested[nameId] = Ctx.nextName(); $(nameId).value = suggested[nameId]; }
     }
   }
   Cogo.COMMANDS.forEach(function (c) {
@@ -182,7 +195,7 @@
     var name = $('c1Nom').value.trim(), e = num('c1E'), n = num('c1N'), z = num('c1Z');
     var jw = Ctx.writable(); if (!jw.ok) { msg('c1Msg', jw.why, 'warn'); return; }
     if (!name || isNaN(e) || isNaN(n)) { msg('c1Msg', 'Nom, Est et Nord requis.', 'warn'); return; }
-    if (findPoint(name)) { msg('c1Msg', 'Le point ' + name + ' existe déjà dans ce travail.', 'warn'); return; }
+    if (findOwn(name)) { msg('c1Msg', 'Le point ' + name + ' existe déjà dans ce travail.', 'warn'); return; }
     Ctx.addPoints([makePoint(name, $('c1Code').value.trim(), { e: e, n: n, z: isNaN(z) ? null : z }, 'inscrit', 'Inscrit')]);
     msg('c1Msg', 'Point ' + name + ' enregistré.', 'ok');
     $('c1Nom').value = Ctx.nextName(); $('c1E').value = ''; $('c1N').value = ''; $('c1Z').value = '';
@@ -227,11 +240,18 @@
     var fr = new FileReader();
     fr.onload = function () {
       try {
-        var jw = Ctx.writable(); if (!jw.ok) throw new Error(jw.why.replace(/\.$/, ''));
         var list = parsePointFile(fr.result, $('c1Order').value), add = [], skipped = 0, replaced = 0;
+        if ($('c1Dest').value === 'lier') {
+          if (!list.length) throw new Error('aucun point lisible');
+          if (!Ctx.leve()) throw new Error('aucun travail ouvert');
+          var id = Refs.addFile(file.name, list); Refs.ensure(id);
+          msg('c1Msg', list.length + ' point(s) de ' + file.name + ' liés au travail, sans entrer dans le levé : « point@' + Refs.source(id).alias + ' ».', 'ok');
+          return;
+        }
+        var jw = Ctx.writable(); if (!jw.ok) throw new Error(jw.why.replace(/\.$/, ''));
         var dup = $('c1Dup').value, src = 'Importé de ' + file.name;
         list.forEach(function (r) {
-          var ex = findPoint(r.name), p = makePoint(r.name, r.d, r, 'importe', src);
+          var ex = findOwn(r.name), p = makePoint(r.name, r.d, r, 'importe', src);
           p.origLeve = file.name; p.origNom = r.name;
           if (ex && dup === 'skip') { skipped++; return; }
           if (ex && dup === 'replace') { Ctx.replacePoint(ex.idx, p); replaced++; return; }
@@ -498,6 +518,9 @@
       '<input id="pkQ" placeholder="Chercher : nom, code, description" autocomplete="off">' +
       '<div class="pkopts"><label>Travail<select id="pkLeve"></select></label>' +
       '<label>Ordre<select id="pkSort"><option value="recent">Plus récents</option><option value="near">Plus proches de moi</option><option value="name">Par nom</option></select></label></div>' +
+      '<div class="pktools"><button class="btn" id="pkAddPt" type="button">+ Inscrire un point connu</button>' +
+      '<label class="btn" for="pkFile" style="display:inline-block;color:var(--ink)">+ Lier un fichier</label><input type="file" id="pkFile" accept=".txt,.csv,text/plain,text/csv" style="display:none">' +
+      '<label class="check" style="margin:0"><input type="checkbox" id="pkCopy">Copier dans le levé (exception)</label></div>' +
       '<div class="pklist" id="pkList"></div>' +
       '<div class="pkfoot"><div class="pkseq" id="pkSeq"></div>' +
       '<button class="btn" id="pkKbd" type="button">Saisir au clavier</button>' +
@@ -507,26 +530,44 @@
     d.addEventListener('click', function (e) { if (e.target === d) closePicker(); });
   })();
   if (S.pkSort) $('pkSort').value = S.pkSort;
+  /* Sources du sélecteur : travail en cours, références liées, autres travaux et fichiers de l'appareil. */
   function leveList() {
-    var cur = Ctx.leve(), seen = {}, out = [['*cur', 'Travail en cours (' + (cur || 'sans nom') + ')'], ['*all', 'Tous les travaux']];
-    Ctx.points().forEach(function (p) { var l = p.leve || ''; if (!seen[l] && l !== cur) { seen[l] = 1; out.push([l, l || '(sans nom)']); } });
+    var cur = Ctx.leve(), out = [['*cur', 'Travail en cours (' + (cur || 'sans nom') + ')']];
+    if (!window.Refs) return out.concat([['*all', 'Tous les travaux']]);
+    var L = Refs.links(), lk = Refs.linked(undefined, 1);
+    if (Refs.linked(undefined, 2).length) out.push(['*refs', 'Références liées utilisables']);
+    lk.forEach(function (s) { out.push(['src:' + s.id, '↳ ' + s.label + (s.state === 2 ? ' (liée)' : ' (visible seulement)')]); });
+    Ctx.allJobs().forEach(function (j) { if (j.name !== cur && L[Refs.jobId(j.name)] === undefined) out.push(['src:' + Refs.jobId(j.name), 'Travail ' + j.name + ' · ' + j.count + ' pt']); });
+    Refs.fileList().forEach(function (f) { if (L[f.id] === undefined && f.kind === 'file') out.push(['src:' + f.id, f.label]); });
+    out.push(['*all', 'Tout : travail en cours et toutes les sources']);
     return out;
   }
+  /* Points de la source choisie. Chaque élément : { p, key (nom ou nom@source), own }. */
   function pkPoints() {
-    var sel = $('pkLeve').value, cur = Ctx.leve(), q = $('pkQ').value.trim().toLowerCase();
-    var pts = Ctx.points(), byName = {}, list = [];
-    for (var i = pts.length - 1; i >= 0; i--) {
-      var p = pts[i];
-      if (p.est === null || p.est === undefined || byName[p.nom]) continue;
-      if (sel === '*cur' ? (p.leve || '') !== cur : sel !== '*all' && (p.leve || '') !== sel) continue;
-      byName[p.nom] = 1;
-      if (q && (p.nom + ' ' + (p.code || '') + ' ' + (p.codeDesc || '')).toLowerCase().indexOf(q) < 0) continue;
-      list.push({ p: p, i: i });
+    var sel = $('pkLeve').value, cur = Ctx.leve(), q = $('pkQ').value.trim().toLowerCase(), list = [], seen = {};
+    function addOwn() {
+      var pts = Ctx.points();
+      for (var i = pts.length - 1; i >= 0; i--) {
+        var p = pts[i];
+        if (p.est === null || p.est === undefined || p.del || (p.leve || '') !== cur || seen[p.nom]) continue;
+        seen[p.nom] = 1; list.push({ p: p, key: p.nom, own: true });
+      }
     }
+    function addSrc(id) { Refs.pointsOf(id).forEach(function (p) { if (!seen[p.q]) { seen[p.q] = 1; list.push({ p: p, key: p.q, own: false }); } }); }
+    if (sel === '*cur' || sel === '*all') addOwn();
+    if (window.Refs) {
+      if (sel === '*refs') Refs.linked(undefined, 2).forEach(function (s) { addSrc(s.id); });
+      else if (sel.indexOf('src:') === 0) addSrc(sel.slice(4));
+      else if (sel === '*all') {
+        Ctx.allJobs().forEach(function (j) { if (j.name !== cur) addSrc(Refs.jobId(j.name)); });
+        Refs.fileList().forEach(function (f) { addSrc(f.id); });
+      }
+    }
+    if (q) list = list.filter(function (x) { return (x.key + ' ' + (x.p.code || '') + ' ' + (x.p.codeDesc || '')).toLowerCase().indexOf(q) >= 0; });
     var here = Ctx.here ? Ctx.here() : null, sort = $('pkSort').value;
     if (sort === 'near' && here) list.forEach(function (x) { x.d = Math.hypot(x.p.est - here.e, x.p.nord - here.n); });
     if (sort === 'near' && here) list.sort(function (a, b) { return a.d - b.d; });
-    else if (sort === 'name') list.sort(function (a, b) { return String(a.p.nom).localeCompare(String(b.p.nom), 'fr', { numeric: true }); });
+    else if (sort === 'name') list.sort(function (a, b) { return String(a.key).localeCompare(String(b.key), 'fr', { numeric: true }); });
     return { list: list, here: here };
   }
   /* Mode « code » : bibliothèque de Pcodes (codes récents si la recherche est vide). */
@@ -548,16 +589,17 @@
   function renderPicker() {
     var isCode = PK.mode === 'code';
     document.querySelector('.pkopts').style.display = isCode ? 'none' : '';
+    document.querySelector('.pktools').style.display = isCode || !window.Refs ? 'none' : '';
     if (isCode) return renderCodes();
     var r = pkPoints(), box = $('pkList'), f = function (v) { return v === null || v === undefined ? '—' : v.toFixed(3); };
     box.innerHTML = '';
-    if (!r.list.length) box.innerHTML = '<p class="hint" style="padding:10px">Aucun point' + ($('pkQ').value ? ' pour cette recherche' : ' dans ce travail') + '. Essayez « Tous les travaux ».</p>';
+    if (!r.list.length) box.innerHTML = '<p class="hint" style="padding:10px">Aucun point' + ($('pkQ').value ? ' pour cette recherche' : ' dans cette source') + '. Choisir une autre source, lier un fichier ou inscrire le point.</p>';
     r.list.slice(0, 300).forEach(function (x) {
       var p = x.p, b = document.createElement('button'), theo = p.type && p.type !== 'mesure';
-      b.type = 'button'; b.className = 'pkrow' + (PK.chosen.indexOf(p.nom) >= 0 ? ' sel' : '');
-      b.innerHTML = '<span class="nm' + (theo ? ' theo' : '') + '">' + esc(p.nom) + '</span><span class="cd">' + esc(p.code || '') + (p.codeDesc ? ' · ' + esc(p.codeDesc) : '') + '</span>' +
+      b.type = 'button'; b.className = 'pkrow' + (PK.chosen.indexOf(x.key) >= 0 ? ' sel' : '');
+      b.innerHTML = '<span class="nm' + (theo ? ' theo' : '') + '">' + esc(p.nom) + (x.own ? '' : '<span class="src">@' + esc(p.refAlias) + '</span>') + '</span><span class="cd">' + esc(p.code || '') + (p.codeDesc ? ' · ' + esc(p.codeDesc) : '') + '</span>' +
         '<span class="xy">E ' + f(p.est) + ' · N ' + f(p.nord) + ' · Z ' + f(p.alt) + (x.d !== undefined ? ' · à ' + x.d.toFixed(1) + ' m' : '') + (theo ? ' · ' + esc(p.type) : '') + '</span>';
-      b.addEventListener('click', function () { pickPoint(p.nom, p); });
+      b.addEventListener('click', function () { pickPoint(x); });
       box.appendChild(b);
     });
     if ($('pkSort').value === 'near' && !r.here) box.insertAdjacentHTML('afterbegin', '<p class="hint" style="padding:6px">Position du récepteur inconnue : ordre des plus récents.</p>');
@@ -567,7 +609,7 @@
     $('pkUndo').style.display = multi && PK.chosen.length ? '' : 'none';
   }
   function openPicker(input, mode, title) {
-    PK.input = input; PK.mode = mode; PK.chosen = [];
+    PK.input = input; PK.mode = mode; PK.chosen = []; $('pkCopy').checked = false;
     if (mode === 'seq') PK.chosen = Cogo.parseSequence(input.value);
     $('pkTitle').textContent = title || (mode === 'code' ? 'Choisir un code' : mode === 'pair' ? 'Choisir deux points' : mode === 'seq' ? 'Choisir les points' : 'Choisir un point');
     var sel = $('pkLeve'), prev = sel.value; sel.innerHTML = '';
@@ -583,24 +625,30 @@
     var inp = PK.input; closePicker(); if (!inp) return;
     inp.value = val; inp.dispatchEvent(new Event('input')); inp.dispatchEvent(new Event('change'));
   }
-  /* Point d'un autre travail : on l'importe dans le travail en cours (trace d'origine conservée). */
-  function bringIn(p) {
-    var cur = Ctx.leve();
-    if ((p.leve || '') === cur) return true;
-    var here = findPoint(p.nom);
+  /* Exception : copier dans le levé un point d'une autre source (trace d'origine conservée). */
+  function copyIn(p) {
+    var cur = Ctx.leve(), here = findOwn(p.nom);
     if (here) {
       var s0 = here.src;
-      if (s0.origLeve === (p.leve || '') && s0.origNom === p.nom) return true;      // déjà importé
-      $('pkSeq').textContent = 'Le travail en cours a déjà un point ' + p.nom + ' (autre origine) : choisir un autre point.'; return false;
+      if (s0.origNom === p.nom && (s0.origLeve === p.refAlias || s0.origLeve === p.refLabel.replace(/^Travail /, ''))) return p.nom;   // déjà copié
+      $('pkSeq').textContent = 'Le travail en cours a déjà un point ' + p.nom + ' (autre origine) : choisir un autre point.'; return null;
     }
     var jw = Ctx.writable();
-    if (!jw.ok) { $('pkSeq').textContent = jw.why; return false; }
-    if (!confirm('Importer le point ' + p.nom + ' du travail ' + (p.leve || '(sans nom)') + ' dans le travail en cours (' + cur + ') ?\nIl gardera sa trace d\u2019origine.')) return false;
-    Ctx.addPoints([copyPoint(p, cur)]);
-    return true;
+    if (!jw.ok) { $('pkSeq').textContent = jw.why; return null; }
+    var src = Refs.source(p.ref), raw;
+    if (src.kind === 'job') raw = Ctx.points().filter(function (o) { return (o.leve || '') === src.name && o.nom === p.nom; }).pop();
+    var c = raw ? copyPoint(raw, cur) : makePoint(p.nom, p.code, { e: p.est, n: p.nord, z: p.alt }, 'importe', 'Copié de ' + src.label);
+    if (!raw) { c.origLeve = src.name; c.origNom = p.nom; }
+    Ctx.addPoints([c]);
+    return p.nom;
   }
-  function pickPoint(name, p) {
-    if (p && !bringIn(p)) return;
+  /* Choix d'un point : un point lié reste lié (nom@source) ; sa source est liée au travail si elle ne l'était pas. */
+  function pickPoint(x) {
+    var name = x.key;
+    if (!x.own) {
+      if ($('pkCopy').checked) { name = copyIn(x.p); if (!name) return; }
+      else Refs.ensure(x.p.ref);
+    }
     if (PK.mode === 'one') { finish(name); return; }
     if (PK.mode === 'pair') {
       PK.chosen.push(name);
@@ -609,6 +657,32 @@
     }
     PK.chosen.push(name); renderPicker();
   }
+  // Outils du sélecteur : inscrire un point connu, lier un fichier, copier par exception
+  $('pkAddPt').addEventListener('click', function () {
+    var job = Ctx.leve(); if (!job) { $('pkSeq').textContent = 'Aucun travail ouvert.'; return; }
+    var nm = prompt('Nom du point connu (il restera hors du levé, dans « Saisis au terrain ») :'); if (!nm || !nm.trim()) return;
+    var xyz = prompt('Est, Nord, Altitude (facultative) — séparés par des espaces ou des points-virgules :'); if (!xyz) return;
+    var v = xyz.trim().split(/[\s;]+/).map(function (t) { return parseFloat(t.replace(',', '.')); });
+    if (v.length < 2 || isNaN(v[0]) || isNaN(v[1])) { $('pkSeq').textContent = 'Coordonnées non lues : inscrire Est puis Nord.'; return; }
+    var d = prompt('Description (facultative) :', '') || '';
+    var q = Refs.addSaisi(job, { nom: nm.trim().replace(/@/g, ''), est: v[0], nord: v[1], alt: isNaN(v[2]) ? null : v[2], code: d.trim() });
+    var hit = Refs.find(q);
+    if (hit && hit.p) pickPoint({ p: hit.p, key: q, own: false });
+  });
+  $('pkFile').addEventListener('change', function () {
+    var file = this.files && this.files[0]; this.value = ''; if (!file) return;
+    var fr = new FileReader();
+    fr.onload = function () {
+      try {
+        if (!Ctx.leve()) throw new Error('aucun travail ouvert');
+        var list = parsePointFile(fr.result, S.rfOrder || 'PNEZD'); if (!list.length) throw new Error('aucun point lisible');
+        var id = Refs.addFile(file.name, list); Refs.ensure(id);
+        var sel = $('pkLeve'), o = document.createElement('option'); o.value = 'src:' + id; o.textContent = '↳ ' + Refs.source(id).label + ' (liée)'; sel.appendChild(o); sel.value = o.value;
+        renderPicker(); $('pkSeq').textContent = list.length + ' point(s) liés de ' + file.name + '.';
+      } catch (e) { $('pkSeq').textContent = 'Fichier refusé : ' + e.message + '.'; }
+    };
+    fr.readAsText(file);
+  });
   $('pkClose').addEventListener('click', closePicker);
   $('pkOk').addEventListener('click', function () { finish(PK.chosen.join(', ')); });
   $('pkUndo').addEventListener('click', function () { PK.chosen.pop(); renderPicker(); });
@@ -638,5 +712,5 @@
   ['c3Az1', 'c3Az2', 'c3D1', 'c3D2'].forEach(function (id) { attach(id, 'pair', '2 pts', false); });
   ['c1Code', 'c3Code', 'c2Code'].forEach(function (id) { attach(id, 'code', 'Codes', false); });
 
-  window.CogoUi = { openPicker: openPicker,  parsePointFile: parsePointFile };
+  window.CogoUi = { openPicker: openPicker, parsePointFile: parsePointFile, findPoint: findPoint };
 })();

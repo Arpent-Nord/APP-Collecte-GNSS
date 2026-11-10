@@ -284,7 +284,8 @@
   }
   function activeDone() { return st.code && !st.solo && isDone(st.code + '|' + st.str[st.code]); }
   function measureState() {
-    var bm = $('btnMeasure'); $('lcMeasure').disabled = bm.disabled || !composeDesc() || activeDone(); $('lcMeasure').textContent = bm.textContent;
+    var bm = $('btnMeasure'); var ctl = window.Refs && Refs.control.active() && !$('ctlKeep').checked;   // contrôle seul : pas de description requise
+    $('lcMeasure').disabled = bm.disabled || (!ctl && (!composeDesc() || activeDone())); $('lcMeasure').textContent = bm.textContent;
   }
   $('lcMeasure').addEventListener('click', function () { $('btnMeasure').click(); });
 
@@ -334,6 +335,8 @@
     var fr = box4.querySelector('[data-free]'); if (fr) fr.addEventListener('click', function () { st.lock = null; st.sugHtml = ''; renderSug(); draw(); });
   }
   // nouveau point conservé ou base modifiée
+  document.addEventListener('cg:refs', function () { if (st.on) draw(); });
+  document.addEventListener('cg:control', function () { if (st.on) { measureState(); if (!st.userView) fitView(); draw(); } });
   document.addEventListener('cg:points', function () {
     if (!st.on) return;
     var n = jobPts().length;
@@ -365,6 +368,7 @@
   function size() { var r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1; if (cv.width !== Math.round(r.width * d)) { cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d); } return { w: r.width, h: r.height, d: d }; }
   function fitView() {
     var pts = st.rows.map(function (r) { return [r.e, r.n]; }), me = Ctx.here(); if (me) pts.push([me.e, me.n]);
+    var tg = window.Refs && Refs.control.target(); if (tg) pts.push([tg.est, tg.nord]);   // point de contrôle visé
     var s = size();
     if (!pts.length) { st.view = { cx: me ? me.e : 0, cy: me ? me.n : 0, k: 5 }; return; }
     var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -420,6 +424,17 @@
         }
       });
     });
+    // références liées visibles (autres travaux, fichiers) : croix grises, hors du levé
+    if (window.Refs) {
+      ctx.strokeStyle = '#7d8c8a'; ctx.fillStyle = '#7d8c8a'; ctx.lineWidth = 1.5; ctx.font = '10px Barlow, sans-serif';
+      var tg = Refs.control.target();
+      Refs.visible().forEach(function (p) {
+        var q = toScr(p.est, p.nord); if (q[0] < -10 || q[1] < -10 || q[0] > s.w + 10 || q[1] > s.h + 10) return;
+        ctx.beginPath(); ctx.moveTo(q[0] - 4, q[1] - 4); ctx.lineTo(q[0] + 4, q[1] + 4); ctx.moveTo(q[0] + 4, q[1] - 4); ctx.lineTo(q[0] - 4, q[1] + 4); ctx.stroke();
+        if (tg && tg.q === p.q) { ctx.strokeStyle = '#4dd0e1'; ctx.beginPath(); ctx.arc(q[0], q[1], 9, 0, 7); ctx.stroke(); ctx.strokeStyle = '#7d8c8a'; }
+        if (st.lbl && st.view.k > 2) ctx.fillText(p.nom.length > 6 ? p.nom.slice(-4) : p.nom, q[0] + 5, q[1] + 11);
+      });
+    }
     // points
     st.rows.forEach(function (r, k) {
       var p = toScr(r.e, r.n), pt = Ctx.points()[st.idx[k]], theo = pt && pt.type && pt.type !== 'mesure';

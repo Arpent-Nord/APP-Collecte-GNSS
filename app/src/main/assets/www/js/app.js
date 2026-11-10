@@ -374,8 +374,15 @@
       if (nx) $('mNom').value = nx;
       return;
     }
+    // Contrôle sur un point de référence liée : enregistré au travail (écarts), sans ajouter le point d'origine au levé.
+    var ctlNote = '';
+    if (window.Refs && Refs.control.active()) {
+      var cr = Refs.control.record(r, $('mLeve').value.trim());
+      if (!cr.keep) { state.pending = null; state.recorder = null; $('result').style.display = 'none'; $('prog').style.width = '0%'; renderJobBar(); return; }
+      ctlNote = cr.note;
+    }
     var p = {
-      leve: $('mLeve').value.trim(), nom: $('mNom').value.trim(), code: $('mCode').value.trim(), note: $('mNote').value.trim(),
+      leve: $('mLeve').value.trim(), nom: $('mNom').value.trim(), code: $('mCode').value.trim(), note: ($('mNote').value.trim() + (ctlNote ? ' ' + ctlNote : '')).trim(),
       codeDesc: codeDescription($('mCode').value), type: 'mesure',
       est: r.est, nord: r.nord, alt: r.alt, systeme: r.systeme, systemeAlti: r.systemeAlti, sep: r.sep,
       baseKm: r.baseKm, baseId: r.baseId, corrSrc: r.corrSrc, ageMax: r.ageMax,
@@ -952,6 +959,7 @@
       sel.appendChild(o);
     });
     sel.value = '';
+    document.dispatchEvent(new Event('cg:job'));
   }
   function openJob(name) {
     $('mLeve').value = name; registerJob(name); persistFields();
@@ -972,7 +980,7 @@
     points: function () { return points; },
     job: job,
     leve: function () { return $('mLeve').value.trim(); },
-    writable: jobWritable, jobPoints: jobPoints,
+    writable: jobWritable, jobPoints: jobPoints, allJobs: allJobs, jobDate: jobDate,
     /* Enregistre la base de points après une correction faite sur place (outils du levé par codes). */
     savePoints: function () { save(STORE_POINTS, points); renderPoints(); },
     jobMeta: function (name) { name = name || $('mLeve').value.trim(); registerJob(name); return jobs[name]; },

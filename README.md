@@ -160,6 +160,17 @@ Onglet **Mesure → Levé par codes**. Même mesure que « point par point » (c
 
 Le moteur `js/moteur-leve.js` est extrait de Validation de levé par `node tools/maj-moteur-leve.js <index.html de validation-leve>` : relancer après chaque nouvelle version de l'outil de bureau.
 
+## Références liées (travaux et fichiers consultés, hors du levé)
+
+Un travail contient **ses** points (mesurés, calculés). Les autres travaux de l'appareil et les fichiers de points (.txt, .csv) se **lient** au travail, en lecture seule, sans jamais y être copiés.
+
+- **Lier à tout moment** : onglet Travail → Références liées, ou directement dans la fenêtre de choix de points (« + Lier un fichier », « + Inscrire un point connu »), sans quitter l'opération en cours.
+- **État par source** (toucher pour changer) : Caché → Visible (croix grises au croquis) → Utilisable (choix des points, calculs, contrôle).
+- **Nom d'un point lié** : `point@source` (ex. `631313015@261109A0051EXC63`, `P2@implantation`). Le nom seul suffit s'il est unique parmi les références utilisables ; sinon l'application demande de préciser. Aucun conflit avec les numéros du jour.
+- **Contrôle** (onglet Mesure) : choisir le point de contrôle, mesurer. Le contrôle (source, point, description, coordonnées, mesure, ΔE ΔN ΔH ΔZ) est enregistré au travail ; rien n'entre au levé, sauf si « Garder aussi la mesure comme point du levé » est coché. Onglet Points → « Exporter les contrôles » : `<travail>_CONTROLES.csv`.
+- **Exception** : « Copier dans le levé » dans la fenêtre de choix (ou 1 · Enregistre → Destination « Copier ») copie un point avec sa trace d'origine.
+- Les fichiers liés restent sur l'appareil ; « Retirer » les efface de l'appareil.
+
 ## Corrections par radio (LoRa, UHF) ou modem du récepteur
 
 Onglet Récepteur, carte « Corrections RTK », **Source des corrections** :
